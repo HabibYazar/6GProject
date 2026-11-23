@@ -1,0 +1,46 @@
+# NSG MRO layer — real mobility + handover-margin plumbing, honestly scoped.
+#
+# Reference note (distro trees are the source of truth). Config gap #3 from
+# docs/engine-veri-ve-config-durumu.md, partially closed.
+#
+# ── What is wired (end to end) ───────────────────────────────────────────────
+# * settings.ho_sinr_margin_db (schema, default 3, clamp 1-20) -> NSG_HO_SINR
+#   -> --hoSinrDifference (both run_scenario.sh and run_live_session.sh; the
+#   live script never passed it at all before). The scenario's DynamicTtt
+#   handover algorithm consumes it.
+# * mobility.speed_mps -> per-UE NSG_UE_SPEED list -> ueSpeedsFile GlobalValue
+#   -> per-node ConstantRandomVariable on the RandomWalk2dOutdoor model. The
+#   walk speed used to be hardcoded Uniform(2,4) — the config's speed was a
+#   silent fake lever. PROVEN real: position-trace step lengths scale exactly
+#   with the configured speed (measured ratio 17.9x vs configured 17.9x;
+#   engines/nsoran/test_mro.py).
+# * engine response gains "handovers": distinct NGAP connection ids minus
+#   distinct IMSIs in the sampled KPM (ids are reissued on handover) — a free
+#   lower-bound mobility metric.
+#
+# ── Honest limit, measured ───────────────────────────────────────────────────
+# MOTION-DRIVEN handover churn is NOT observable in a batch run: the sim
+# advances only ~0.4-1.5 simulated seconds, and a random walk DIFFUSES
+# (direction changes every leg) instead of traversing — even a x40 speed
+# compression produced 0 handovers at every speed/margin combination, so that
+# compression was REMOVED rather than shipped as a useless magic constant
+# (unlike the call-model compression, which measurably delivers its goal).
+# The margin lever's behavioural effects belong to longer/live horizons; in
+# batch it is plumbing-verified only. No fidelity lever was added for it —
+# the harness only asserts what the engine can actually show.
+#
+# ── Verified (2026-07-17) ────────────────────────────────────────────────────
+# test_mro.py PASS: speeds applied to all UEs, step-length ratio 17.9x (exact),
+# margin arg reaches the scenario; full fidelity harness 9/9 after the change.
+
+# ── ADDENDUM (2026-07-18): the live horizon is ALSO too short ────────────────
+# Definitive measurement: a 5-minute LIVE session advances only ~2.6 simulated
+# seconds (the mmWave sim runs at ~0.5% of real time). Even at 25 m/s with a
+# 1 dB margin, the diffusive walk nets ~20-30 m against 350 m cell spacing —
+# MOTION-driven handover churn is unobservable at ANY practical horizon of
+# this engine, batch or live. The handovers counter remains meaningful for
+# CONTROL-driven mobility (manual/AI handover commands flip it) and the margin
+# still shapes SINR-driven reassignment; the earlier "belongs to longer/live
+# horizons" claim is corrected to this. Also measured: indication periodicity
+# 0.25 s is NOT worth it (17 -> 19 indications; sampling is wall-clock-bound,
+# not periodicity-bound) — 0.5 s stays the default.

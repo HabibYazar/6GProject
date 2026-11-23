@@ -1,0 +1,77 @@
+# NSG — PHY/MAC on the mmWave DATA PATH. Chosen over ICIC, and why that matters.
+#
+# ── The batch this REPLACED, and the check that killed it ──────────────────
+# `tools/param_audit.py` ranked LteFfr*/LteFr* (frequency reuse / ICIC) as the
+# largest backlog block: ~56 attributes, a real 3GPP feature, completely
+# unexposed. It was the obvious next batch. Reading mmwave-helper.cc first:
+#   * inside InstallSingleEnbDevice (the mmWave gNB installer) the FFR algorithm
+#     creation is COMMENTED OUT, with the fork author's note that using it
+#     required changing the bandwidth to 25;
+#   * the FFR SAP wiring is commented out and labelled `/* not used in mmwave */`;
+#   * FFR is live only in InstallSingleLteEnbDevice — the single LTE anchor.
+# In this scenario the anchor carries no user data (every UE is dual-connected
+# and all traffic rides the mmWave gNBs), so ICIC would have been an inter-cell
+# interference feature with one cell and nothing to coordinate. Twenty minutes
+# of source reading against a multi-day dead end.
+#
+# It also exposed a LIMIT OF THE AUDIT TOOL worth remembering: param_audit
+# measures whether a field changes the ENGINE PAYLOAD, not whether it changes
+# PHYSICS. Every FFR field would have shown up as WIRED while doing nothing.
+# Payload delivery is necessary, not sufficient — that is what these tests are.
+#
+# ── WIRED (all plain ns-3 attributes; no C++ in this batch) ────────────────
+# Deliberately the MmWave* classes, not their Lte* namesakes, for the same
+# reason ICIC died: Lte*Phy knobs only touch the idle anchor.
+#   ue_noise_figure_db / gnb_noise_figure_db -> MmWaveUePhy/EnbPhy::NoiseFigure
+#   ue_tx_power_dbm                          -> MmWaveUePhy::TxPower  (uplink budget)
+#   ue_outage_threshold_db, ue_n310          -> UE-side link failure detection
+#   cqi_report_period_ms, cqi_timer_threshold_ms -> feedback freshness/ageing
+#   sinr_estimate_period_us,
+#   ue_sinr_estimate_period_us               -> MmWaveEnbPhy::Update*SinrEstimatePeriod.
+#       This is the INPUT the Phase-2b handover loop reads: a mobility decision
+#       can only be as fresh as the SINR estimate behind it, so it pairs with
+#       ho_check_period_ms.
+#   fixed_mcs_dl / fixed_mcs_ul              -> FixedMcs* + McsDefault* (two
+#       attributes each: the flag and the value). Removes AMC from an experiment.
+#   sched_direction                          -> DlSchedOnly / UlSchedOnly
+#   sym_per_slot, ra_preambles,
+#   ra_preamble_trans_max, ra_response_window
+# numberOfRaPreambles rides the scenario GlobalValue, not the attribute — the
+# scenario Config::SetDefault's that one AFTER cmd.Parse and would overwrite it
+# (the same trap HARQ hit in radio-2c.patch).
+#
+# ── NOT SHIPPED: the data error model crashes when disabled ────────────────
+# MmWaveSpectrumPhy::DataErrorModelEnabled=false null-dereferences at
+# t=0.101 s ("Attempted to dereference zero pointer", ptr.h:718) — something
+# downstream dereferences the error model unconditionally. No schema field, same
+# rule as the dead schedulers in radio-2c.patch: a config must not be able to
+# produce a crashed run. NSG_DATA_ERR still reaches the engine API for research,
+# and test_phy_mac.py asserts the BROKEN state so an upstream fix surfaces.
+#
+# ── sched_direction is the honest answer to "TDD frame format" ─────────────
+# radio-2c.patch recorded the frame-format field as N/A because this MAC is
+# flexible-TTI: the DL/UL symbol split comes from demand every slot, so there is
+# no DDDSU pattern to configure. DlSchedOnly/UlSchedOnly is the real DL/UL
+# control it does offer, and it is absolute: measured UL 8324 -> 0 kbps.
+#
+# ── Measured (2026-07-26, engines/nsoran/test_phy_mac.py, PASS) ────────────
+# 3 cells, 6 UEs, 50 Mbps/UE offered, shadowing on:
+#
+#   A  defaults                     17.82 Mbps/UE  PRB 29.5  UL 8324 kbps
+#   B  UE noise figure 5 -> 13 dB   17.56          PRB 38.3  UL 8164
+#   C  DL MCS pinned to 4            2.47          PRB 52.5
+#   D  DL MCS pinned to 20          16.52          PRB 27.7
+#   F  scheduler DL-only            17.91          PRB 29.5  UL 0
+#   G  CQI/SINR/RACH/sym batch      18.35          PRB 32.3  UL 8279
+#
+# * MCS pinning: 2.47 -> 16.52 Mbps/UE (+568%) between MCS 4 and MCS 20. The
+#   sharpest lever in the batch, and the one that lets an experiment hold link
+#   adaptation still.
+# * DL-only: uplink goes to exactly 0.
+# * NOISE FIGURE — MEASURE THE RIGHT COLUMN. A worse receiver moved throughput
+#   by only -1.5%, which reads as "no effect", while PRB rose 29.5 -> 38.3
+#   (+30%). The UEs are offered more than the link delivers, so a degraded link
+#   is answered by spending MORE RESOURCES for the same delivered bits. The cost
+#   is real; it just lands in PRB, not throughput. Asserting on throughput would
+#   have declared a working lever dead — the same class of mistake as measuring
+#   a demand-limited run in antenna-2c.patch.

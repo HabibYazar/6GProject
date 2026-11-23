@@ -1,0 +1,586 @@
+{
+ "fields": {
+  "anomalies": [
+   "slow",
+   "fast"
+  ],
+  "anomalies[].cell_id": [
+   "slow",
+   "fast"
+  ],
+  "anomalies[].duration_s": [
+   "slow",
+   "fast"
+  ],
+  "anomalies[].noise_rise_db": [
+   "slow",
+   "fast"
+  ],
+  "anomalies[].start_s": [
+   "slow",
+   "fast"
+  ],
+  "anomalies[].tx_power_dbm": [
+   "slow",
+   "fast"
+  ],
+  "anomalies[].type": [
+   "slow",
+   "fast"
+  ],
+  "area.resolution_m": [
+   "coverage"
+  ],
+  "area.x_max": [
+   "coverage"
+  ],
+  "area.x_min": [
+   "coverage"
+  ],
+  "area.y_max": [
+   "coverage"
+  ],
+  "area.y_min": [
+   "coverage"
+  ],
+  "base_stations[].position.x": [
+   "slow",
+   "fast",
+   "coverage"
+  ],
+  "base_stations[].position.y": [
+   "slow",
+   "fast",
+   "coverage"
+  ],
+  "base_stations[].position.z": [
+   "slow",
+   "fast",
+   "coverage"
+  ],
+  "base_stations[].radio.antenna.azimuth_deg": [
+   "slow",
+   "coverage"
+  ],
+  "base_stations[].radio.antenna.gain_dbi": [
+   "slow",
+   "coverage"
+  ],
+  "base_stations[].radio.antenna.horizontal_beamwidth_deg": [
+   "slow",
+   "coverage"
+  ],
+  "base_stations[].radio.antenna.massive_mimo.cols": [
+   "slow",
+   "fast"
+  ],
+  "base_stations[].radio.antenna.massive_mimo.h_spacing_wl": [
+   "slow"
+  ],
+  "base_stations[].radio.antenna.massive_mimo.polarization_deg": [
+   "slow"
+  ],
+  "base_stations[].radio.antenna.massive_mimo.rows": [
+   "slow",
+   "fast"
+  ],
+  "base_stations[].radio.antenna.massive_mimo.v_spacing_wl": [
+   "slow"
+  ],
+  "base_stations[].radio.antenna.tilt_deg": [
+   "slow",
+   "coverage"
+  ],
+  "base_stations[].radio.antenna.type": [],
+  "base_stations[].radio.antenna.vertical_beamwidth_deg": [
+   "slow",
+   "coverage"
+  ],
+  "base_stations[].radio.band.bandwidth_mhz": [
+   "slow",
+   "fast",
+   "coverage"
+  ],
+  "base_stations[].radio.band.frequency_mhz": [
+   "slow",
+   "fast",
+   "coverage"
+  ],
+  "base_stations[].radio.band.numerology": [
+   "slow",
+   "fast",
+   "coverage"
+  ],
+  "base_stations[].radio.sleep.idle_timer_ms": [
+   "slow",
+   "fast"
+  ],
+  "base_stations[].radio.sleep.mode": [
+   "slow",
+   "fast"
+  ],
+  "base_stations[].radio.sleep.wake_delay_ms": [
+   "slow"
+  ],
+  "base_stations[].radio.tx_power_dbm": [
+   "slow",
+   "fast",
+   "coverage"
+  ],
+  "buildings[].bounds.x_max": [
+   "slow",
+   "fast",
+   "coverage"
+  ],
+  "buildings[].bounds.x_min": [
+   "slow",
+   "fast",
+   "coverage"
+  ],
+  "buildings[].bounds.y_max": [
+   "slow",
+   "fast",
+   "coverage"
+  ],
+  "buildings[].bounds.y_min": [
+   "slow",
+   "fast",
+   "coverage"
+  ],
+  "buildings[].bounds.z_max": [
+   "slow",
+   "fast",
+   "coverage"
+  ],
+  "buildings[].bounds.z_min": [
+   "slow",
+   "fast",
+   "coverage"
+  ],
+  "buildings[].building_type": [
+   "slow"
+  ],
+  "buildings[].floors": [
+   "slow"
+  ],
+  "buildings[].rooms_x": [
+   "slow"
+  ],
+  "buildings[].rooms_y": [
+   "slow"
+  ],
+  "buildings[].wall_material": [
+   "slow",
+   "coverage"
+  ],
+  "settings.admit_handover_request": [
+   "slow",
+   "fast"
+  ],
+  "settings.amc_model": [
+   "slow"
+  ],
+  "settings.amc_target_ber": [
+   "slow",
+   "fast"
+  ],
+  "settings.antenna_element": [
+   "slow",
+   "fast"
+  ],
+  "settings.beamforming_model": [
+   "slow"
+  ],
+  "settings.blockage_enabled": [
+   "slow"
+  ],
+  "settings.blocker_speed_mps": [
+   "slow"
+  ],
+  "settings.building_penetration_loss": [
+   "slow"
+  ],
+  "settings.channel_update_ms": [
+   "slow"
+  ],
+  "settings.connection_rejected_timeout_ms": [
+   "slow"
+  ],
+  "settings.connection_request_timeout_ms": [
+   "slow"
+  ],
+  "settings.connection_setup_timeout_ms": [
+   "slow"
+  ],
+  "settings.cqi_report_period_ms": [
+   "slow"
+  ],
+  "settings.cqi_timer_threshold_ms": [
+   "slow"
+  ],
+  "settings.default_transmission_mode": [
+   "slow"
+  ],
+  "settings.duration_s": [
+   "slow"
+  ],
+  "settings.error_model": [
+   "slow"
+  ],
+  "settings.fixed_mcs_dl": [
+   "slow",
+   "fast"
+  ],
+  "settings.fixed_mcs_ul": [
+   "slow",
+   "fast"
+  ],
+  "settings.fixed_tti": [
+   "slow",
+   "fast"
+  ],
+  "settings.gnb_noise_and_filter": [
+   "slow"
+  ],
+  "settings.gnb_noise_figure_db": [
+   "slow",
+   "fast"
+  ],
+  "settings.gnb_transient_ns": [
+   "slow"
+  ],
+  "settings.handover_mode": [
+   "slow",
+   "fast"
+  ],
+  "settings.harq_dl_timeout": [
+   "slow"
+  ],
+  "settings.harq_enabled": [
+   "slow"
+  ],
+  "settings.harq_processes": [
+   "slow"
+  ],
+  "settings.ho_a2_threshold_db": [
+   "slow",
+   "fast"
+  ],
+  "settings.ho_a3_entry": [
+   "slow",
+   "fast"
+  ],
+  "settings.ho_check_period_ms": [
+   "slow",
+   "fast"
+  ],
+  "settings.ho_dyn_diff_max_db": [
+   "slow"
+  ],
+  "settings.ho_dyn_diff_min_db": [
+   "slow"
+  ],
+  "settings.ho_dyn_ttt_max_ms": [
+   "slow"
+  ],
+  "settings.ho_dyn_ttt_min_ms": [
+   "slow"
+  ],
+  "settings.ho_hysteresis_db": [
+   "slow",
+   "fast"
+  ],
+  "settings.ho_joining_timeout_ms": [
+   "slow"
+  ],
+  "settings.ho_leaving_timeout_ms": [
+   "slow"
+  ],
+  "settings.ho_sinr_margin_db": [
+   "slow",
+   "fast"
+  ],
+  "settings.ho_ttt_ms": [
+   "slow"
+  ],
+  "settings.kpm_collect_s": [
+   "slow"
+  ],
+  "settings.kpm_report_cu_cp": [
+   "slow"
+  ],
+  "settings.kpm_report_cu_up": [
+   "slow"
+  ],
+  "settings.kpm_report_du": [
+   "slow"
+  ],
+  "settings.non_self_blocking_count": [
+   "slow"
+  ],
+  "settings.o2i_low_loss_threshold": [
+   "slow"
+  ],
+  "settings.o2i_threshold": [
+   "slow"
+  ],
+  "settings.outage_threshold_db": [
+   "slow",
+   "fast"
+  ],
+  "settings.portrait_mode": [
+   "slow"
+  ],
+  "settings.q_rx_lev_min_dbm": [
+   "slow",
+   "fast"
+  ],
+  "settings.ra_preamble_trans_max": [
+   "slow"
+  ],
+  "settings.ra_preambles": [
+   "slow"
+  ],
+  "settings.ra_response_window": [
+   "slow"
+  ],
+  "settings.random_seed": [
+   "slow",
+   "fast"
+  ],
+  "settings.report_all_ue_meas": [
+   "slow"
+  ],
+  "settings.report_interval_ms": [
+   "slow",
+   "fast"
+  ],
+  "settings.rlc_am_enabled": [
+   "slow"
+  ],
+  "settings.rlc_buffer_mb": [
+   "slow",
+   "fast"
+  ],
+  "settings.rlc_poll_retransmit_ms": [
+   "slow"
+  ],
+  "settings.rlc_reordering_timer_ms": [
+   "slow"
+  ],
+  "settings.rlc_status_prohibit_ms": [
+   "slow"
+  ],
+  "settings.rrc_t300_ms": [
+   "slow"
+  ],
+  "settings.rsrp_filter_coefficient": [
+   "slow",
+   "fast"
+  ],
+  "settings.rsrq_filter_coefficient": [
+   "slow"
+  ],
+  "settings.ru_idle_current_a": [
+   "slow",
+   "fast"
+  ],
+  "settings.ru_rx_current_a": [
+   "slow",
+   "fast"
+  ],
+  "settings.ru_tx_current_a": [
+   "slow",
+   "fast"
+  ],
+  "settings.s1ap_link_delay_ms": [
+   "slow"
+  ],
+  "settings.s1ap_link_gbps": [
+   "slow"
+  ],
+  "settings.s1u_link_delay_ms": [
+   "slow"
+  ],
+  "settings.s1u_link_gbps": [
+   "slow",
+   "fast"
+  ],
+  "settings.s1u_link_mtu": [
+   "slow"
+  ],
+  "settings.scatterer_speed_mps": [
+   "slow"
+  ],
+  "settings.scenario": [
+   "slow"
+  ],
+  "settings.sched_direction": [
+   "slow",
+   "fast"
+  ],
+  "settings.shadowing_enabled": [
+   "slow",
+   "fast"
+  ],
+  "settings.sinr_estimate_period_us": [
+   "slow"
+  ],
+  "settings.sleep_idle_duty_pct": [
+   "slow"
+  ],
+  "settings.sleep_power_a": [
+   "slow"
+  ],
+  "settings.sleep_wake_hold_ms": [
+   "slow"
+  ],
+  "settings.sleep_wake_load_pct": [
+   "slow"
+  ],
+  "settings.srs_periodicity": [
+   "slow"
+  ],
+  "settings.svd_max_iterations": [
+   "slow"
+  ],
+  "settings.svd_tolerance": [
+   "slow"
+  ],
+  "settings.svd_use_cache": [
+   "slow"
+  ],
+  "settings.sym_per_slot": [
+   "slow",
+   "fast"
+  ],
+  "settings.system_information_periodicity_ms": [
+   "slow"
+  ],
+  "settings.tb_decode_latency_us": [
+   "slow"
+  ],
+  "settings.ue_mac_sinr_period_us": [
+   "slow"
+  ],
+  "settings.ue_n310": [
+   "slow"
+  ],
+  "settings.ue_noise_figure_db": [
+   "slow",
+   "fast"
+  ],
+  "settings.ue_outage_threshold_db": [
+   "slow",
+   "fast"
+  ],
+  "settings.ue_sinr_estimate_period_us": [
+   "slow"
+  ],
+  "settings.ue_tx_power_dbm": [
+   "slow",
+   "fast"
+  ],
+  "settings.use_ideal_rrc": [
+   "slow"
+  ],
+  "settings.use_pdsch_for_cqi": [
+   "slow"
+  ],
+  "settings.x2_link_delay_ms": [
+   "slow"
+  ],
+  "settings.x2_link_gbps": [
+   "slow"
+  ],
+  "settings.x2_link_mtu": [
+   "slow"
+  ],
+  "slices": [
+   "slow",
+   "fast"
+  ],
+  "slices[].dedicated_pct": [
+   "slow"
+  ],
+  "slices[].max_pct": [
+   "slow",
+   "fast"
+  ],
+  "slices[].min_pct": [
+   "slow"
+  ],
+  "slices[].qos_id": [
+   "slow",
+   "fast"
+  ],
+  "ue_groups[].count": [
+   "slow",
+   "fast"
+  ],
+  "ue_groups[].height_m": [
+   "slow",
+   "fast"
+  ],
+  "ue_groups[].mobility.pattern": [
+   "fast"
+  ],
+  "ue_groups[].mobility.speed_mps": [
+   "slow",
+   "fast"
+  ],
+  "ue_groups[].mobility.waypoint_mode": [
+   "slow"
+  ],
+  "ue_groups[].mobility.waypoints[].position.x": [
+   "slow",
+   "fast"
+  ],
+  "ue_groups[].mobility.waypoints[].position.y": [
+   "slow",
+   "fast"
+  ],
+  "ue_groups[].mobility.waypoints[].position.z": [
+   "slow"
+  ],
+  "ue_groups[].mobility.waypoints[].speed_mps": [
+   "slow",
+   "fast"
+  ],
+  "ue_groups[].services[].avg_call_duration_s": [
+   "slow",
+   "fast"
+  ],
+  "ue_groups[].services[].avg_idle_duration_s": [
+   "slow",
+   "fast"
+  ],
+  "ue_groups[].services[].call_distribution": [
+   "slow"
+  ],
+  "ue_groups[].services[].protocol": [
+   "slow"
+  ],
+  "ue_groups[].services[].qos_id": [
+   "slow",
+   "fast"
+  ],
+  "ue_groups[].services[].slice_type": [
+   "fast"
+  ],
+  "ue_groups[].services[].target_throughput_gbps": [
+   "slow",
+   "fast"
+  ],
+  "ue_groups[].spawn_position.x": [
+   "slow",
+   "fast"
+  ],
+  "ue_groups[].spawn_position.y": [
+   "slow",
+   "fast"
+  ]
+ },
+ "measured_at": "2026-09-21T19:05:27",
+ "note": "which consumer reads each config field, measured by perturbing it: slow = the ns-3 payload, fast = the per-window tier, coverage = the REM heatmap"
+}

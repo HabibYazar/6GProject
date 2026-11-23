@@ -1,0 +1,82 @@
+# ns-O-RAN mmWave: compute RSRP. SHIPPED in nsg-engine:1.25.
+#
+# The mmWave module never had RSRP. MmWaveUePhy fires its
+# ReportCurrentCellRsrpSinr trace as (imsi, sinr, sinr) — the RSRP slot carries
+# SINR. Nothing consumed it (the only subscriber, in mmwave-helper.cc, is
+# commented out), so no value was ever wrong; the quantity simply did not exist.
+# It surfaced when a coverage comparison against VIAVI Tera5G had their RSRP on
+# one side and nothing on ours.
+#
+# MmWaveEnbPhy::UpdateUeSinrEstimate already holds `m_rxPsdMap[imsi]` — the
+# received PSD per UE, which is exactly what RSRP is computed from. This adds the
+# computation to the loop that is already walking that map, using the same
+# arithmetic as the LTE stack (lte-ue-phy.cc DoReportRsrp): PSD [W/Hz] -> power
+# per resource element [W] -> dBm. The RB width comes from the signal's own bands
+# rather than LTE's hardcoded 180 kHz, so it stays correct at any numerology.
+#
+# It is emitted as a [NSG-RSRP] log line, NOT an E2SM-KPM field. Getting it into
+# KPM means a new field on the X2 message that carries per-UE SINR from the
+# mmWave gNB to the LTE anchor RRC, then a new trace, a new map and a new ASN.1
+# item — five files through the chain that carries the product's headline KPI.
+# That is the right change; this one was made the day before a demo and takes the
+# cheap path. An external xApp over E2 does not see RSRP; the platform, the UI and
+# any comparison do. Promote it when there is room.
+#
+# PARSING TRAP, measured on the first run that emitted it: several producers write
+# into scn0.log concurrently and ns-3 does not serialise them, so lines SPLICE —
+#     [NSG-RSRP] t=   0.1568 cell=3 imsi=5 rsrp_dbm=44 01 20 00 00 63 ...
+#                <id>[NSG-RSRP] t=0 cell=4 imsi=6 rsrp_dbm=8</id>
+# A loose `rsrp_dbm=(-?[\d.]+)` read "44" and "8" out of an E2AP hex dump and an
+# XML fragment and reported +44 dBm, above the transmit power. engine_service.py
+# anchors the pattern to end of line and bounds the value below 0 dBm.
+#
+# Verified nsg-engine:1.25, 3 cells / 6 UEs: 29,766 samples,
+# -147.59 .. -78.81 dBm, mean -119.9 — and coherent with the SINR the same run
+# reports (noise floor per RE ~-124 dBm at this bandwidth).
+#
+# Applied to: src/mmwave/model/mmwave-enb-phy.cc
+# ---------------------------------------------------------------------------
+--- /home/builder/ns-O-RAN-flexric/mmwave-LENA-oran/src/mmwave/model/mmwave-enb-phy.cc.pre_rsrp	2026-07-28 20:06:12.803647700 +0300
++++ /home/builder/ns-O-RAN-flexric/mmwave-LENA-oran/src/mmwave/model/mmwave-enb-phy.cc	2026-09-17 12:37:23.324355298 +0300
+@@ -734,6 +734,41 @@
+          ue != m_rxPsdMap.end();
+          ++ue)
+     {
++        // NSG: RSRP, from the received PSD this loop already holds.
++        //
++        // The mmWave module never computed RSRP: MmWaveUePhy fires its
++        // ReportCurrentCellRsrpSinr trace as (imsi, sinr, sinr) -- the RSRP slot
++        // carries SINR. Nothing consumed it (the only subscriber in
++        // mmwave-helper.cc is commented out), so no value was ever wrong; the
++        // quantity simply did not exist, and a coverage comparison against a
++        // commercial tester had nothing to line up against.
++        //
++        // Same arithmetic as the LTE stack (lte-ue-phy.cc DoReportRsrp):
++        // PSD [W/Hz] -> power per resource element [W] -> dBm. The RB width is
++        // taken from the signal's own bands rather than LTE's hardcoded 180 kHz,
++        // so it stays correct at any numerology.
++        {
++            Ptr<SpectrumValue> rsrpPsd = ue->second;
++            double rsrpSum = 0.0;
++            uint32_t rsrpRb = 0;
++            auto bandIt = rsrpPsd->ConstBandsBegin();
++            for (auto valIt = rsrpPsd->ConstValuesBegin();
++                 valIt != rsrpPsd->ConstValuesEnd() && bandIt != rsrpPsd->ConstBandsEnd();
++                 ++valIt, ++bandIt)
++            {
++                double rbHz = bandIt->fh - bandIt->fl;
++                rsrpSum += (*valIt) * rbHz / 12.0;
++                rsrpRb++;
++            }
++            if (rsrpRb > 0 && rsrpSum > 0.0)
++            {
++                double rsrpDbm = 10.0 * std::log10 (1000.0 * (rsrpSum / rsrpRb));
++                NS_LOG_UNCOND ("[NSG-RSRP] t=" << Simulator::Now ().GetSeconds ()
++                               << " cell=" << m_cellId << " imsi=" << ue->first
++                               << " rsrp_dbm=" << rsrpDbm);
++            }
++        }
++
+         SpectrumValue interference = *totalReceivedPsd - *(ue->second);
+         NS_LOG_LOGIC("interference " << interference);
+         SpectrumValue sinr = *(ue->second) / (*noisePsd); // + interference);

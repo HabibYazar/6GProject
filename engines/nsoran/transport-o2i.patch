@@ -1,0 +1,59 @@
+# NSG — transport network (backhaul), indoor/outdoor channel condition, PHY
+# timing, and the SVD solver cost. Also: two thirds of the batch got PRUNED
+# after measuring, which is the point of measuring.
+#
+# ── WIRED ──────────────────────────────────────────────────────────────────
+# * TRANSPORT / BACKHAUL -> MmWavePointToPointEpcHelper::X2LinkDelay /
+#   X2LinkDataRate / S1uLinkDelay / S1uLinkDataRate / S1uLinkMtu.
+#   X2 carries handover signalling between gNBs, so its delay is part of how
+#   long a handover actually takes — the engine's 1 ms default is a co-located
+#   ideal, and every handover measured in Phase 2b crossed a perfect backhaul.
+#   S1-U delay adds to every packet's end-to-end latency, and its data rate is
+#   where a backhaul-limited site appears.
+# * O2I -> ThreeGppChannelConditionModel::O2iThreshold / O2iLowLossThreshold.
+#   What share of UEs are treated as indoors, and of those, how many get the
+#   low-loss building model instead of the high-loss one.
+# * PHY TIMING -> MmWavePhyMacCommon::HarqDlTimeout / TbDecodeLatency.
+# * SVD SOLVER -> MmWaveSvdBeamforming::MaxIterations / Tolerance / UseCache.
+#   Only bites when beamforming_model='svd'; it trades beam quality for
+#   simulation time.
+#
+# ── PRUNED AFTER MEASURING — the four building-propagation fields ──────────
+# InternalWallLoss, ShadowSigmaOutdoor, ShadowSigmaIndoor, ShadowSigmaExtWalls
+# are attributes of ns3::BuildingsPropagationLossModel, and this scenario NEVER
+# INSTANTIATES that model — it uses the ThreeGpp*PropagationLossModel family,
+# which computes its own O2I loss internally. Measured: 5 dB vs 20 dB of
+# internal wall loss produced BYTE-IDENTICAL PRB (14.33 both times), which is
+# what tipped it off. Exactly the ICIC class: real ns-3 attributes on a model
+# outside this engine's path. They looked like the most natural pairing with
+# the rooms_x/rooms_y grid wired earlier, and they would have been four more
+# dead fields.
+#
+# ── PRUNED — UlSchedDelay crashes ──────────────────────────────────────────
+# MmWavePhyMacCommon::UlSchedDelay=3 aborts the run. Isolated from the other two
+# timing knobs by testing them one at a time (TbDecodeLatency and HarqDlTimeout
+# are both fine). No schema field; NSG_UL_SCHED_DELAY still reaches the engine
+# API and the test asserts the broken state. Fourth application of the rule.
+#
+# ── Measured (2026-07-26, engines/nsoran/test_transport_buildings.py, PASS) ─
+# 3 cells, 6 UEs, 50 Mbps/UE, shadowing on, seed 11:
+#
+#   A  defaults (ideal backhaul)      14.59 Mbps/UE  PRB 41.3  PDCP delay  533
+#   B  S1-U 50 Mbps + 15 ms           13.42  (-8.3%) PRB  7.8  PDCP delay   28
+#   C  X2 delay 20 ms                 14.08          PRB 33.0  PDCP delay  630
+#   D  90% of UEs indoors             12.08 (-17.2%) PRB 34.5  PDCP delay 5513
+#   E  TB decode 250 us, HARQ TO 40   13.21          PRB 41.3
+#   F  SVD 5 iterations, no cache     15.09          PRB 27.0
+#
+# * MEASURE THE COLUMN THE EFFECT LANDS IN. The backhaul lever moved throughput
+#   only -8.3%, which reads as "barely working" — while PRB fell 41.3 -> 7.8
+#   (-81%) and PDCP delay 533 -> 28. When the transport cannot feed the cell,
+#   the radio stops being ASKED for resources; the generator was offering more
+#   than either link could carry, so throughput was never the sensitive
+#   quantity. Same lesson as the UE noise figure (phy-mac.patch), and the second
+#   time an assertion on throughput nearly buried a working lever.
+# * A first attempt used 1 Gbps for the "backhaul-limited" case and measured
+#   +5.5%. A 1 Gbps backhaul is ~10x what this cell can fill, so it never bound.
+#   A backhaul only limits when it sits BELOW what the radio can carry.
+# * Indoor UEs cost 17.2% throughput and 10x the PDCP delay — the O2I lever is
+#   the strongest of the shipped set.

@@ -1,0 +1,525 @@
+{
+  "name": "Nightly suite",
+  "description": "Scenario regression watch \u2014 see tools/nightly_campaign.py",
+  "base_seed": 42,
+  "thresholds": [
+    {
+      "metric": "dl_mbps_mean",
+      "op": ">=",
+      "value": 1.0,
+      "label": "Downlink (mean)"
+    },
+    {
+      "metric": "measurements.L3servingSINR.mean",
+      "op": ">=",
+      "value": 0.0,
+      "label": "Serving SINR (mean)"
+    },
+    {
+      "metric": "ticks",
+      "op": ">=",
+      "value": 5,
+      "label": "KPM windows captured"
+    }
+  ],
+  "items": [
+    {
+      "label": "Baseline",
+      "config": {
+        "name": "Baseline \u2014 5 cells, 10 UEs",
+        "description": "fidelity probe",
+        "base_stations": [
+          {
+            "id": "g1",
+            "name": "g1",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 25
+            },
+            "radio": {
+              "band": {
+                "label": "NR",
+                "frequency_mhz": 3500,
+                "bandwidth_mhz": 50,
+                "numerology": 1
+              },
+              "tx_power_dbm": 44.0,
+              "antenna": {
+                "type": "cosine",
+                "azimuth_deg": 0,
+                "tilt_deg": 3,
+                "gain_dbi": 17,
+                "horizontal_beamwidth_deg": 65,
+                "vertical_beamwidth_deg": 7.5
+              }
+            }
+          },
+          {
+            "id": "g2",
+            "name": "g2",
+            "position": {
+              "x": 500,
+              "y": 0,
+              "z": 25
+            },
+            "radio": {
+              "band": {
+                "label": "NR",
+                "frequency_mhz": 3500,
+                "bandwidth_mhz": 50,
+                "numerology": 1
+              },
+              "tx_power_dbm": 44.0,
+              "antenna": {
+                "type": "cosine",
+                "azimuth_deg": 0,
+                "tilt_deg": 3,
+                "gain_dbi": 17,
+                "horizontal_beamwidth_deg": 65,
+                "vertical_beamwidth_deg": 7.5
+              }
+            }
+          },
+          {
+            "id": "g3",
+            "name": "g3",
+            "position": {
+              "x": 0,
+              "y": 500,
+              "z": 25
+            },
+            "radio": {
+              "band": {
+                "label": "NR",
+                "frequency_mhz": 3500,
+                "bandwidth_mhz": 50,
+                "numerology": 1
+              },
+              "tx_power_dbm": 44.0,
+              "antenna": {
+                "type": "cosine",
+                "azimuth_deg": 0,
+                "tilt_deg": 3,
+                "gain_dbi": 17,
+                "horizontal_beamwidth_deg": 65,
+                "vertical_beamwidth_deg": 7.5
+              }
+            }
+          },
+          {
+            "id": "g4",
+            "name": "g4",
+            "position": {
+              "x": 500,
+              "y": 500,
+              "z": 25
+            },
+            "radio": {
+              "band": {
+                "label": "NR",
+                "frequency_mhz": 3500,
+                "bandwidth_mhz": 50,
+                "numerology": 1
+              },
+              "tx_power_dbm": 44.0,
+              "antenna": {
+                "type": "cosine",
+                "azimuth_deg": 0,
+                "tilt_deg": 3,
+                "gain_dbi": 17,
+                "horizontal_beamwidth_deg": 65,
+                "vertical_beamwidth_deg": 7.5
+              }
+            }
+          },
+          {
+            "id": "g5",
+            "name": "g5",
+            "position": {
+              "x": 250,
+              "y": 250,
+              "z": 25
+            },
+            "radio": {
+              "band": {
+                "label": "NR",
+                "frequency_mhz": 3500,
+                "bandwidth_mhz": 50,
+                "numerology": 1
+              },
+              "tx_power_dbm": 44.0,
+              "antenna": {
+                "type": "cosine",
+                "azimuth_deg": 0,
+                "tilt_deg": 3,
+                "gain_dbi": 17,
+                "horizontal_beamwidth_deg": 65,
+                "vertical_beamwidth_deg": 7.5
+              }
+            }
+          }
+        ],
+        "ue_groups": [
+          {
+            "id": "u2",
+            "name": "u2",
+            "count": 2,
+            "spawn_position": {
+              "x": 500,
+              "y": 0
+            },
+            "mobility": {
+              "pattern": "pedestrian",
+              "speed_mps": 1.4
+            },
+            "services": [
+              {
+                "slice_type": "eMBB",
+                "qos_id": 9,
+                "target_throughput_gbps": 0.01
+              }
+            ]
+          },
+          {
+            "id": "u3",
+            "name": "u3",
+            "count": 2,
+            "spawn_position": {
+              "x": 0,
+              "y": 500
+            },
+            "mobility": {
+              "pattern": "pedestrian",
+              "speed_mps": 1.4
+            },
+            "services": [
+              {
+                "slice_type": "eMBB",
+                "qos_id": 9,
+                "target_throughput_gbps": 0.01
+              }
+            ]
+          },
+          {
+            "id": "u4",
+            "name": "u4",
+            "count": 2,
+            "spawn_position": {
+              "x": 500,
+              "y": 500
+            },
+            "mobility": {
+              "pattern": "pedestrian",
+              "speed_mps": 1.4
+            },
+            "services": [
+              {
+                "slice_type": "eMBB",
+                "qos_id": 9,
+                "target_throughput_gbps": 0.01
+              }
+            ]
+          },
+          {
+            "id": "u5",
+            "name": "u5",
+            "count": 4,
+            "spawn_position": {
+              "x": 250,
+              "y": 250
+            },
+            "mobility": {
+              "pattern": "pedestrian",
+              "speed_mps": 1.4
+            },
+            "services": [
+              {
+                "slice_type": "eMBB",
+                "qos_id": 9,
+                "target_throughput_gbps": 0.01
+              }
+            ]
+          }
+        ],
+        "buildings": [],
+        "area": {
+          "x_min": -400,
+          "x_max": 900,
+          "y_min": -400,
+          "y_max": 900,
+          "resolution_m": 40
+        },
+        "settings": {
+          "duration_s": 20,
+          "report_interval_ms": 1000,
+          "scenario": "UMa",
+          "shadowing_enabled": true,
+          "fast_fading_enabled": false,
+          "random_seed": 42
+        }
+      },
+      "frames": 30,
+      "repeats": 2
+    },
+    {
+      "label": "Energy saving",
+      "config": {
+        "name": "Energy saving \u2014 idle cell sleeps",
+        "description": "fidelity probe",
+        "base_stations": [
+          {
+            "id": "g1",
+            "name": "g1",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 25
+            },
+            "radio": {
+              "band": {
+                "label": "NR",
+                "frequency_mhz": 3500,
+                "bandwidth_mhz": 50,
+                "numerology": 1
+              },
+              "tx_power_dbm": 44.0,
+              "antenna": {
+                "type": "cosine",
+                "azimuth_deg": 0,
+                "tilt_deg": 3,
+                "gain_dbi": 17,
+                "horizontal_beamwidth_deg": 65,
+                "vertical_beamwidth_deg": 7.5
+              },
+              "sleep": {
+                "mode": "deep",
+                "idle_timer_ms": 200.0
+              }
+            }
+          },
+          {
+            "id": "g2",
+            "name": "g2",
+            "position": {
+              "x": 500,
+              "y": 0,
+              "z": 25
+            },
+            "radio": {
+              "band": {
+                "label": "NR",
+                "frequency_mhz": 3500,
+                "bandwidth_mhz": 50,
+                "numerology": 1
+              },
+              "tx_power_dbm": 44.0,
+              "antenna": {
+                "type": "cosine",
+                "azimuth_deg": 0,
+                "tilt_deg": 3,
+                "gain_dbi": 17,
+                "horizontal_beamwidth_deg": 65,
+                "vertical_beamwidth_deg": 7.5
+              },
+              "sleep": {
+                "mode": "deep",
+                "idle_timer_ms": 200.0
+              }
+            }
+          },
+          {
+            "id": "g3",
+            "name": "g3",
+            "position": {
+              "x": 0,
+              "y": 500,
+              "z": 25
+            },
+            "radio": {
+              "band": {
+                "label": "NR",
+                "frequency_mhz": 3500,
+                "bandwidth_mhz": 50,
+                "numerology": 1
+              },
+              "tx_power_dbm": 44.0,
+              "antenna": {
+                "type": "cosine",
+                "azimuth_deg": 0,
+                "tilt_deg": 3,
+                "gain_dbi": 17,
+                "horizontal_beamwidth_deg": 65,
+                "vertical_beamwidth_deg": 7.5
+              },
+              "sleep": {
+                "mode": "deep",
+                "idle_timer_ms": 200.0
+              }
+            }
+          },
+          {
+            "id": "g4",
+            "name": "g4",
+            "position": {
+              "x": 500,
+              "y": 500,
+              "z": 25
+            },
+            "radio": {
+              "band": {
+                "label": "NR",
+                "frequency_mhz": 3500,
+                "bandwidth_mhz": 50,
+                "numerology": 1
+              },
+              "tx_power_dbm": 44.0,
+              "antenna": {
+                "type": "cosine",
+                "azimuth_deg": 0,
+                "tilt_deg": 3,
+                "gain_dbi": 17,
+                "horizontal_beamwidth_deg": 65,
+                "vertical_beamwidth_deg": 7.5
+              },
+              "sleep": {
+                "mode": "deep",
+                "idle_timer_ms": 200.0
+              }
+            }
+          },
+          {
+            "id": "g5",
+            "name": "g5",
+            "position": {
+              "x": 250,
+              "y": 250,
+              "z": 25
+            },
+            "radio": {
+              "band": {
+                "label": "NR",
+                "frequency_mhz": 3500,
+                "bandwidth_mhz": 50,
+                "numerology": 1
+              },
+              "tx_power_dbm": 44.0,
+              "antenna": {
+                "type": "cosine",
+                "azimuth_deg": 0,
+                "tilt_deg": 3,
+                "gain_dbi": 17,
+                "horizontal_beamwidth_deg": 65,
+                "vertical_beamwidth_deg": 7.5
+              },
+              "sleep": {
+                "mode": "deep",
+                "idle_timer_ms": 200.0
+              }
+            }
+          }
+        ],
+        "ue_groups": [
+          {
+            "id": "u2",
+            "name": "u2",
+            "count": 2,
+            "spawn_position": {
+              "x": 500,
+              "y": 0
+            },
+            "mobility": {
+              "pattern": "pedestrian",
+              "speed_mps": 1.4
+            },
+            "services": [
+              {
+                "slice_type": "eMBB",
+                "qos_id": 9,
+                "target_throughput_gbps": 0.01
+              }
+            ]
+          },
+          {
+            "id": "u3",
+            "name": "u3",
+            "count": 2,
+            "spawn_position": {
+              "x": 0,
+              "y": 500
+            },
+            "mobility": {
+              "pattern": "pedestrian",
+              "speed_mps": 1.4
+            },
+            "services": [
+              {
+                "slice_type": "eMBB",
+                "qos_id": 9,
+                "target_throughput_gbps": 0.01
+              }
+            ]
+          },
+          {
+            "id": "u4",
+            "name": "u4",
+            "count": 2,
+            "spawn_position": {
+              "x": 500,
+              "y": 500
+            },
+            "mobility": {
+              "pattern": "pedestrian",
+              "speed_mps": 1.4
+            },
+            "services": [
+              {
+                "slice_type": "eMBB",
+                "qos_id": 9,
+                "target_throughput_gbps": 0.01
+              }
+            ]
+          },
+          {
+            "id": "u5",
+            "name": "u5",
+            "count": 4,
+            "spawn_position": {
+              "x": 250,
+              "y": 250
+            },
+            "mobility": {
+              "pattern": "pedestrian",
+              "speed_mps": 1.4
+            },
+            "services": [
+              {
+                "slice_type": "eMBB",
+                "qos_id": 9,
+                "target_throughput_gbps": 0.01
+              }
+            ]
+          }
+        ],
+        "buildings": [],
+        "area": {
+          "x_min": -400,
+          "x_max": 900,
+          "y_min": -400,
+          "y_max": 900,
+          "resolution_m": 40
+        },
+        "settings": {
+          "duration_s": 20,
+          "report_interval_ms": 1000,
+          "scenario": "UMa",
+          "shadowing_enabled": true,
+          "fast_fading_enabled": false,
+          "random_seed": 42
+        }
+      },
+      "frames": 30,
+      "repeats": 2
+    }
+  ]
+}

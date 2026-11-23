@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@reactflow/node-resizer": "^2.2.14",
+    "jsondiffpatch": "^0.7.3",
+    "react-diff-viewer-continued": "^4.2.2",
+    "react-json-view": "^1.21.3",
+    "reactflow": "^11.11.4",
+    "recharts": "^3.8.1"
+  }
+}

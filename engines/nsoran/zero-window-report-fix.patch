@@ -1,0 +1,42 @@
+# NSG fix: zero-counter KPM reports (PRB/UL read 0 while traffic flows)
+#
+# Reference note (distro trees are the source of truth; build-slim.sh bakes
+# them). One file pair changes:
+#   src/mmwave/model/mmwave-enb-net-device.{h,cc}
+#
+# ── Symptom ──────────────────────────────────────────────────────────────────
+# Whole runs where RRU.PrbUsedDl and DRB.PdcpSduBitRateUl read exactly 0 while
+# DRB.UEThpDl shows healthy throughput. Deterministic per binary (buildings
+# runs hit it reliably, plain baselines intermittently) — any rebuild shifted
+# which runs were affected, which made it look haunted.
+#
+# ── Root cause: two builder chains resetting one set of counters ─────────────
+# Instrumentation caught the smoking gun:
+#   [NSG-DU] t=0.200232  sym=1  denom=0  winNs=232141
+# The GUI/file-logging builders (BuildGUIDu/CuUp/CuCp) self-reschedule every
+# 100 ms and RESET THE SAME windowed KPM counters the E2 report reads
+# (ResetPhyTracesForRntiCellId etc.). So every E2 report window was clipped to
+# <=100 ms; and when the E2 build landed microseconds after a GUI build, the
+# window was shorter than one slot — the PRB denominator
+#   ceil(window_ns / slot_ns) * 14
+# uses INTEGER division, hits 0, and the guarded division leaves macPrb = 0
+# for every UE. UL PDCP counters likewise sampled freshly-reset. Cumulative
+# RLC-based throughput still read fine, hence the contradictory-looking
+# "thp > 0 with PRB = 0" reports. Which report the xApp captured depended on
+# wall-clock sim speed — hence per-binary determinism.
+#
+# ── Fix (two layers) ─────────────────────────────────────────────────────────
+# 1. The GUI/file-logging chains now run ONLY in offline file-logging mode
+#    (m_forceE2FileLogging) — in E2 mode nothing consumes their csv output and
+#    they have no business resetting live KPM windows.
+# 2. Guard in BuildAndSendReportMessage: if a build lands < 10 ms after the
+#    previous one, skip it (log "[NSG] ... skipped a zero-window E2 report
+#    build") and just reschedule — an all-zero report can never be emitted.
+#
+# ── Verified (2026-07-17) ────────────────────────────────────────────────────
+# Baseline x3: PRB 7.9-9.1, UL 368-439 kbps (previously 0.0 on this binary);
+# buildings: PRB 4.0 with SINR 24.9 / DL 8.93. Full fidelity harness 9/9
+# "ALL LEVERS WIRED" — including the "L4 PRB consistency" guard that first
+# caught this. NOTE: PRB values are now computed over the true 0.5 s windows
+# (earlier "healthy" runs were measured over GUI-clipped <=100 ms windows, so
+# absolute PRB levels shifted slightly; the levers all still move correctly).

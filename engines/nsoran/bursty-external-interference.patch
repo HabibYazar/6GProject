@@ -1,0 +1,70 @@
+diff --git a/src/mmwave/model/mmwave-interference.cc b/src/mmwave/model/mmwave-interference.cc
+index c6d54728..d1bfa26b 100644
+--- a/src/mmwave/model/mmwave-interference.cc
++++ b/src/mmwave/model/mmwave-interference.cc
+@@ -33,6 +33,9 @@
+ #include <ns3/simulator.h>
+ 
+ #include <stdio.h>
++#include <cmath>
++#include <cstdlib>
++#include <random>
+ 
+ NS_LOG_COMPONENT_DEFINE("mmWaveInterference");
+ 
+@@ -195,6 +198,55 @@ mmWaveInterference::ConditionallyEvaluateChunk()
+         NS_LOG_LOGIC(this << " signal = " << *m_rxSignal << " allSignals = " << *m_allSignals
+                           << " noise = " << *m_noise);
+         SpectrumValue interf = (*m_allSignals) - (*m_rxSignal) + (*m_noise);
++
++        // ===== NSG: BURSTY interference from cells this process cannot see =====
++        // A partitioned run loses the other partitions' cells. Restoring that as a
++        // CONSTANT power — in the noise floor or, identically, in m_allSignals —
++        // was measured and does not work: across 40 dB the AMC simply adapts,
++        // throughput sags ~15% and BLER stays near zero, against a target of 7.74%.
++        // (And note (allSignals - rxSignal + noise) makes "add to the signals" and
++        // "add to the noise" the SAME arithmetic, so that was never a second idea.)
++        //
++        // Block errors do not come from a lower MEAN SINR. They come from the TTIs
++        // where SINR dips under the MCS threshold. Real interference is bursty and
++        // frequency-selective — a neighbour occupies particular RBs in particular
++        // slots — so the term has to carry that variance or it cannot produce an
++        // error at all.
++        //
++        //   NSG_BURST_DBM  : power over the whole carrier when every RB is hit
++        //   NSG_BURST_LOAD : fraction of RBs hit on each evaluation (0..1)
++        //
++        // LOAD=1.0 degenerates to the constant case on purpose, so the same binary
++        // gives the control arm. Its own std::mt19937 is deliberate: drawing from
++        // ns-3's streams would shift every downstream draw and the term-off arm
++        // would stop being byte-identical to an unpatched build.
++        {
++            static const double burstW = [] {
++                const char* v = std::getenv("NSG_BURST_DBM");
++                return v ? std::pow(10.0, std::atof(v) / 10.0) / 1000.0 : 0.0;
++            }();
++            static const double burstLoad = [] {
++                const char* v = std::getenv("NSG_BURST_LOAD");
++                double d = v ? std::atof(v) : 1.0;
++                return d < 0.0 ? 0.0 : (d > 1.0 ? 1.0 : d);
++            }();
++            if (burstW > 0.0)
++            {
++                static thread_local std::mt19937 rng(20260918u);
++                std::uniform_real_distribution<double> u(0.0, 1.0);
++                const uint32_t nRb = interf.GetSpectrumModel()->GetNumBands();
++                if (nRb > 0)
++                {
++                    auto bit = interf.ConstBandsBegin();
++                    for (auto vit = interf.ValuesBegin(); vit != interf.ValuesEnd(); ++vit, ++bit)
++                    {
++                        const double bw = bit->fh - bit->fl;
++                        if (bw > 0.0 && u(rng) < burstLoad) *vit += (burstW / nRb) / bw;
++                    }
++                }
++            }
++        }
++
+         SpectrumValue sinr = (*m_rxSignal) / interf;
+         Time duration = Now() - m_lastChangeTime;
+         for (std::list<Ptr<mmWaveChunkProcessor>>::const_iterator it =

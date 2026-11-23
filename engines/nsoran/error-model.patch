@@ -1,0 +1,63 @@
+# NSG — link-level error model, S1-AP control plane, PHY/scheduler detail.
+#
+# ── The find: the engine decodes 5G with an LTE error model ────────────────
+# MmWaveSpectrumPhy and MmWaveAmc both default to MmWaveLteMiErrorModel — the
+# LTE mutual-information model. The fork also ships the 3GPP NR EESM family and
+# nothing was selecting it:
+#   CC (Chase Combining)         a retransmission repeats the same bits
+#   IR (Incremental Redundancy)  it sends NEW parity — what NR actually does
+#   Table 1 / Table 2            MCS caps at 64QAM / 256QAM
+# settings.error_model -> lte_mi | nr_cc_table1 | nr_cc_table2 | nr_ir_table1 |
+# nr_ir_table2.
+#
+# ONE platform field drives BOTH ns-3 attributes deliberately. ns-3's own
+# attribute doc says they must match ("they need to refer to same MCS tables and
+# indexes"), so a config able to set them apart is a footgun the platform can
+# just remove.
+#
+# ── Also wired ─────────────────────────────────────────────────────────────
+# S1apLinkDelay / S1apLinkDataRate (the CONTROL-plane link to the core, paid at
+# attach and NAS signalling rather than on user data), X2LinkMtu,
+# MmWaveEnbPhy::Transient and NoiseAndFilter,
+# MmWaveUeMac::UpdateUeSinrEstimatePeriod, and
+# MmWaveFlexTtiMacScheduler::FixedTti.
+#
+# ── Skipped after auditing, before writing anything ────────────────────────
+# * LteRlcUmLowLat::* — LteEnbRrc::GetRlcType only ever returns LteRlcUm or
+#   LteRlcAm, so the low-latency variant is not on this path. Would have been
+#   four more dead fields, the same class as the buildings-propagation four.
+# * MmWaveNetDevice::AntennaNum / McUeNetDevice::AntennaNum — the scenario sets
+#   both from `numAntennasMmWave = 1` / `numAntennasMcUe = 1`, hardcoded ints
+#   whose GlobalValue read is COMMENTED OUT. The real array size already comes
+#   from the per-gNB rows x cols in gnbAntennaFile (antenna-2c.patch), so this
+#   is a vestigial second path — left alone rather than given a config field
+#   that fights the one that works.
+#
+# ── Measured (2026-07-26, engines/nsoran/test_error_model.py, PASS) ────────
+# 3 cells, 6 UEs, 50 Mbps/UE, shadowing on, seed 11:
+#
+#   LTE-MI (default)        27.3% BLER at 41.0 PRB
+#   NR EESM CC / table 1    17.2% BLER at 33.0 PRB
+#   NR EESM IR / table 2    25.3% BLER at 40.3 PRB
+#
+# Read these as different OPERATING POINTS, not a ranking: table 2 permits
+# 256QAM, so it takes more risk per block and spends more resources for
+# comparable delivered throughput on this link.
+#
+# ── What this batch could NOT assert, and why that is the honest answer ────
+# Throughput moved ~1-5% across all three models — the third lever this session
+# whose effect throughput failed to show (after the UE noise figure and the
+# backhaul), because the UEs are offered more than the link delivers and
+# throughput sits pinned while the COST of holding it moves.
+#
+# But BLER did not separate them reliably either: the LTE-MI baseline itself
+# measured 18.7% on one run and 27.3% on the next. Two different configs diverge
+# in their RNG draws even at a fixed seed, so on this 0.8 s batch the
+# run-to-run variance is the same size as the difference between models.
+#
+# So the test asserts only that the three models are DISTINCT (BLER spread
+# 17.2-27.3%, i.e. the swap is not a no-op) and that every TypeId is accepted.
+# It does NOT assert a magnitude the horizon cannot support. Tuning the
+# threshold until something passed would have produced exactly the "green for
+# the wrong reason" this project has been removing all along; quantitative
+# separation belongs on the /sim/run horizon, like mobility.

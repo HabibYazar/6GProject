@@ -1,0 +1,80 @@
+# NSG Phase 2c (radio) — AMC + HARQ shipped; scheduler, TDD split, MIMO and
+# multi-band audited and NOT shipped, with the reason for each.
+#
+# Completes Phase 2c together with antenna-2c.patch. The roadmap item read
+# "Antenna model -> engine; TDD frame format + UL/DL split; AMC / HARQ /
+# scheduler choice; MIMO / CA; multi-band + inter-freq HO". Two of those five
+# are real levers in this engine. The other three are not, for three DIFFERENT
+# reasons, and lumping them together as "won't do" is what hid the antenna one
+# for two weeks.
+#
+# ── SHIPPED ────────────────────────────────────────────────────────────────
+# * settings.amc_model -> --ns3::MmWaveAmc::AmcModel (ErrorModel | ShannonModel)
+#   + settings.amc_target_ber -> --ns3::MmWaveAmc::Ber.
+#   MEASURED: 6.98 -> 3.48 Mbps/UE (-50.1%) switching to ShannonModel. Note the
+#   DIRECTION: Shannon is LOWER here, not higher. It is a capacity bound at the
+#   target BER (1e-5 by default), which is more conservative than the error
+#   model's BLER-driven lookup in the real 3GPP MCS tables. Useful as a
+#   different operating point, not as an "optimistic upper bound".
+# * settings.harq_enabled -> harqEnabled, settings.harq_processes ->
+#   numHarqProcess. Both had to become GlobalValues rather than the usual
+#   --ns3::X::Y route: the scenario Config::SetDefault's
+#   MmWaveHelper::HarqEnabled and MmWavePhyMacCommon::NumHarqProcess AFTER
+#   cmd.Parse, so a command-line value was silently overwritten. NumHarqProcess
+#   was a hardcoded 100.
+#   MEASURED: HARQ off = 6.98 -> 8.32 Mbps/UE (+19.2%). Higher WITHOUT HARQ,
+#   which is right for a link this healthy — the retransmission machinery costs
+#   resources it does not earn back. The engine now prints
+#   "[NSG] HARQ on|off, N processes" so the setting is verifiable from the log.
+# * settings.harq_processes is PLUMBING-VERIFIED ONLY: 8 vs 100 processes
+#   reached the engine (confirmed in the log) but moved throughput 6.98 -> 6.88
+#   Mbps/UE, inside the ~10% noise floor. At this scale a UE never has 100
+#   outstanding processes, so the ceiling does not bind. No claim is made that
+#   it changes behaviour here.
+#
+# ── AUDITED, NOT SHIPPED — three different reasons ─────────────────────────
+# 1. SCHEDULER CHOICE — the alternatives are DEAD CODE, measured twice.
+#    The fork ships MmWaveFlexTtiPfMacScheduler,
+#    MmWaveFlexTtiMaxRateMacScheduler and MmWaveFlexTtiMaxWeightMacScheduler
+#    beside the default MmWaveFlexTtiMacScheduler. Substituted via
+#    --ns3::MmWaveHelper::Scheduler:
+#      Pf       -> run "ok", E2 connects, log has NO error, 0 PRB, 0 throughput
+#      MaxRate  -> same, 0 PRB, 0 throughput
+#      MaxWeight-> ns-3 aborts
+#    So exposing the choice would let a config produce a healthy-LOOKING run
+#    that carries nothing. There is deliberately NO settings.scheduler field;
+#    the engine API still honours NSG_SCHEDULER for research. Second reason to
+#    stay on flex-TTI: the Level-6 slice-quota enforcement lives only in that
+#    scheduler (SetNsgSliceQuota is a static, so with any other scheduler it
+#    stores a number nobody reads) — the scenario now WARNS when quotas are
+#    configured with a different scheduler instead of failing silently.
+#    test_radio_2c.py asserts the BROKEN state, so a fork update that repairs
+#    them shows up as a test failure telling you the field can be exposed.
+#
+# 2. TDD FRAME FORMAT / UL-DL SPLIT — not a lever BY DESIGN, not by omission.
+#    This engine's MAC is flexible-TTI: MmWaveFlexTtiMacScheduler derives the
+#    DL and UL symbol counts from demand every slot (m_maxDlSymbols /
+#    m_maxUlSymbols with a deficit loop), so there is no fixed TDD pattern to
+#    configure. The nearest real knob is MmWaveFlexTtiMacScheduler::SymPerSlot,
+#    the TTI granularity — not the same thing, and not exposed. A VIAVI-style
+#    "DDDSU" frame-format field would be a fiction here.
+#
+# 3. MIMO / CA and MULTI-BAND / INTER-FREQ HO — real architectural limits.
+#    * No layer/rank/port handling exists anywhere in the mmWave PHY
+#      (mmwave-spectrum-phy.cc, mmwave-enb-phy.cc): single stream. The
+#      UniformPlanarArray NumVerticalPorts/IsDualPolarized attributes are the
+#      antenna module's, and the PHY never reads them.
+#    * MmWaveHelper does expose UseCa / NumberOfComponentCarriers /
+#      EnbComponentCarrierManager, so CA is not structurally absent — but it is
+#      untested here and the scenario is single-CC throughout.
+#    * Centre frequency is ONE global value:
+#      Config::SetDefault("ns3::MmWavePhyMacCommon::CenterFreq"). Per-cell
+#      carriers need a per-device PhyMacCommon plus a separate channel and
+#      propagation model per band. This half of the 2026-07-14 "WON'T DO"
+#      verdict STANDS; only its antenna half was wrong (antenna-2c.patch).
+#
+# ── Verified (2026-07-26, engines/nsoran/test_radio_2c.py) ──────────────────
+# 7 runs, PASS: shipped variants all carry traffic; HARQ enable and process
+# count both reach the engine and are visible in its log; HARQ off +19.2% and
+# Shannon AMC -50.1% both clear the noise floor; the three dead schedulers are
+# still dead (0 / 0 / crash), reproduced across two independent sweeps.

@@ -1,0 +1,119 @@
+diff --git a/src/spectrum/model/three-gpp-spectrum-propagation-loss-model.cc b/src/spectrum/model/three-gpp-spectrum-propagation-loss-model.cc
+index 527c686e..8040a183 100644
+--- a/src/spectrum/model/three-gpp-spectrum-propagation-loss-model.cc
++++ b/src/spectrum/model/three-gpp-spectrum-propagation-loss-model.cc
+@@ -21,6 +21,9 @@
+ 
+ #include "three-gpp-spectrum-propagation-loss-model.h"
+ 
++#include <cstdlib>
++#include <cmath>
++
+ #include "spectrum-signal-parameters.h"
+ #include "three-gpp-channel-model.h"
+ 
+@@ -462,18 +465,36 @@ ThreeGppSpectrumPropagationLossModel::GetLongTerm(
+     uint64_t longTermId =
+         MatrixBasedChannelModel::GetKey(aPhasedArrayModel->GetId(), bPhasedArrayModel->GetId());
+ 
+-    // look for the long term in the map and check if it is valid
+-    if (m_longTermMap.find(longTermId) != m_longTermMap.end())
++    // NSG: look for a long term computed for THIS beam pair, not just this
++    // tx-rx pair. Upstream keeps one slot per pair and drops it whenever either
++    // beamforming vector changes — but the gNB re-points its beam at the
++    // scheduled UE every TTI, so with several UEs on a cell the slot is thrown
++    // away and recomputed as the scheduler cycles back to a beam it already had.
++    //
++    // A regenerated channel matrix still invalidates EVERY variant for the pair,
++    // so the generation time is checked once against the set rather than per
++    // entry — which also keeps every entry on one generation.
++    auto ltIt = m_longTermMap.find(longTermId);
++    if (ltIt != m_longTermMap.end() && !ltIt->second.empty())
+     {
+-        NS_LOG_DEBUG("found the long term component in the map");
+-        longTerm = m_longTermMap[longTermId]->m_longTerm;
+-
+-        // check if the channel matrix has been updated
+-        // or the s beam has been changed
+-        // or the u beam has been changed
+-        update = (m_longTermMap[longTermId]->m_channel->m_generatedTime !=
+-                      channelMatrix->m_generatedTime ||
+-                  m_longTermMap[longTermId]->m_sW != sW || m_longTermMap[longTermId]->m_uW != uW);
++        if (ltIt->second.front()->m_channel->m_generatedTime !=
++            channelMatrix->m_generatedTime)
++        {
++            ltIt->second.clear(); // the channel moved: every beam variant is stale
++            notFound = true;
++        }
++        else
++        {
++            for (const auto& cached : ltIt->second)
++            {
++                if (cached->m_sW == sW && cached->m_uW == uW)
++                {
++                    NS_LOG_DEBUG("found the long term component in the map");
++                    return cached->m_longTerm;
++                }
++            }
++            notFound = true; // this pair is cached, but not for this beam
++        }
+     }
+     else
+     {
+@@ -489,12 +510,19 @@ ThreeGppSpectrumPropagationLossModel::GetLongTerm(
+         Ptr<LongTerm> longTermItem = Create<LongTerm>();
+         longTermItem->m_longTerm = longTerm;
+         longTermItem->m_channel = channelMatrix;
+-        longTermItem->m_sW = std::move(sW);
+-        longTermItem->m_uW = std::move(uW);
+-        // store the long term to reduce computation load
+-        // only the small scale fading needs to be updated if the large scale parameters and antenna
+-        // weights remain unchanged.
+-        m_longTermMap[longTermId] = longTermItem;
++        // NOT moved: the vectors are the cache KEY now and are compared on every
++        // later lookup, so the entry has to keep its own copy.
++        longTermItem->m_sW = sW;
++        longTermItem->m_uW = uW;
++        // Store this beam's long term alongside the pair's other beams. Oldest
++        // out when full — the scheduler cycles a bounded set, so the working set
++        // is the number of UEs the cell serves.
++        auto& variants = m_longTermMap[longTermId];
++        if (variants.size() >= NSG_LT_VARIANTS)
++        {
++            variants.erase(variants.begin());
++        }
++        variants.push_back(longTermItem);
+     }
+ 
+     return longTerm;
+@@ -518,6 +546,30 @@ ThreeGppSpectrumPropagationLossModel::DoCalcRxPowerSpectralDensity(
+     NS_ASSERT_MSG(bPhasedArrayModel, "Antenna not found for node " << bId);
+     NS_LOG_DEBUG("b node " << bId << " antenna " << bPhasedArrayModel);
+ 
++    // ===== NSG CEILING PROBE — prices a precomputed-propagation design =====
++    // Skip the channel entirely: no GetChannel, no long-term, no per-RB fast
++    // fading. What a REM-lookup architecture would keep is exactly what is left.
++    //
++    // IT MUST NOT TOUCH THE LINK BUDGET. MultiModelSpectrumChannel::StartRx has
++    // already applied the antenna gains and the DISTANCE path loss before this
++    // class is called; all this class ever contributes is fast fading and the
++    // beamforming gain. So the stub contributes a FLAT array gain and nothing
++    // else, and the geometry survives because it never lived here.
++    //
++    // The first version of this probe multiplied the PSD by 1e-12 "as a flat path
++    // loss". That was a second -120 dB on top of the real one: it emptied the
++    // network, and a measurement taken on it prices an idle simulation, not an
++    // architecture. Same artefact that made MaxLossDb pruning look like 10x.
++    //
++    // NSG_STUB_PROP carries the gain in dB (e.g. NSG_STUB_PROP=12). Health has to
++    // be read alongside speed: UE count and KPM names, never span alone.
++    if (const char* stubGainDb = std::getenv("NSG_STUB_PROP"))
++    {
++        Ptr<SpectrumSignalParameters> stubParams = spectrumSignalParams->Copy();
++        *(stubParams->psd) *= std::pow(10.0, std::atof(stubGainDb) / 10.0);
++        return stubParams;
++    }
++
+     Ptr<const MatrixBasedChannelModel::ChannelMatrix> channelMatrix =
+         m_channelModel->GetChannel(a, b, aPhasedArrayModel, bPhasedArrayModel);
+     Ptr<const MatrixBasedChannelModel::ChannelParams> channelParams =

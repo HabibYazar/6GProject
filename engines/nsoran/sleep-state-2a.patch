@@ -1,0 +1,675 @@
+# NSG Phase 2a — RU sleep states (deep / light / micro) on the real ns-O-RAN engine.
+#
+# Applies to the ns-3.42 mmWave fork in the Ubuntu-2004-nsoran distro
+# (/home/builder/ns-O-RAN-flexric/mmwave-LENA-oran). Four pieces:
+#
+#  1. mmwave-radio-energy-model-enb.{h,cc} — the model already DECLARED
+#     m_lightSleepCurrentA / m_microSleepCurrentA and never used them (a cell was
+#     either serving or 0 A "off"). They become real attributes SleepMicroA /
+#     SleepLightA / SleepDeepA with state codes 5/6/7, per-state time accounting
+#     and GetStateTime(), which adds the in-progress slice — the counters are
+#     only credited on LEAVING a state, so a parked radio read 0 for it.
+#     Defaults follow the flexible BS power model (Debaillie et al., VTC 2015):
+#     micro ~0.69, light ~0.50, deep ~0.33 of the active-idle draw.
+#
+#  2. mmwave-spectrum-phy.cc — ChangeState hardcoded m_intState=4 (0 A) whenever
+#     TX power was 0. It now asks the device for its sleep-state code, so a
+#     sleeping cell is charged its depth's current instead of nothing.
+#
+#  3. mmwave-enb-net-device.h — that per-device code (Set/GetSleepStateCode).
+#
+#  4. scenario-zero-with_parallel_loging.cc — the controller itself:
+#     gnbSleepFile ('depth,idle_ms,wake_ms' per gNB), sleepWakeLoadPct,
+#     sleepIdleDutyPct, sleepWakeHoldMs, sleepTickMs; a periodic tick that
+#     descends idle cells after their shutdown timer, wakes them on serving-cell
+#     load after a REAL wake-up delay (the cell is off the air meanwhile), keeps
+#     a coverage floor, and logs [NSG-SLEEP] transitions + [NSG-SLEEP-SUM] duty
+#     summaries. Also: the periodic energy print now reads the model's LIVE
+#     total — the trace only fires on a state CHANGE, so a parked cell's draw
+#     silently vanished from the totals.
+#
+# Rebuild: runuser -u builder -- bash -lc "cd $NS3DIR && ./ns3 build"
+#          then engines/nsoran/build-slim.sh and restart nsg-engine.
+--- src/mmwave/model/mmwave-radio-energy-model-enb.h.pre_sleep.bak	2026-07-25 14:36:13.954811636 +0300
++++ src/mmwave/model/mmwave-radio-energy-model-enb.h	2026-07-25 15:12:04.655370900 +0300
+@@ -49,6 +49,32 @@
+     TracedValue<double> m_ctrl_t;
+     TracedValue<double> m_tx_t;
+     TracedValue<double> m_data_t;
++    /**
++     * NSG sleep states. The radio used to know only "serving" (states 0-3) and
++     * "cell off" (state 4, 0 A). A real RU descends through sleep depths, each
++     * with its own draw and its own wake-up latency, so these are the time
++     * spent in each depth (seconds) — the duty cycle an energy report needs.
++     */
++    TracedValue<double> m_micro_sleep_t;
++    TracedValue<double> m_light_sleep_t;
++    TracedValue<double> m_deep_sleep_t;
++    TracedValue<double> m_off_t;
++
++    /**
++     * Radio state codes as traced by MmWaveSpectrumPhy::m_intState. 0-3 come
++     * from the PHY itself; 4-7 are driven by the cell's sleep controller.
++     */
++    enum RadioState
++    {
++      STATE_IDLE = 0,
++      STATE_TX = 1,
++      STATE_RX_DATA = 2,
++      STATE_RX_CTRL = 3,
++      STATE_OFF = 4,
++      STATE_SLEEP_MICRO = 5,
++      STATE_SLEEP_LIGHT = 6,
++      STATE_SLEEP_DEEP = 7
++    };
+ 
+ 
+    
+@@ -120,6 +146,34 @@
+ 
+   
+     /**
++     * \brief Gets/sets the per-depth sleep currents in Amperes.
++     *
++     * Micro / light / deep are the RU sleep depths: progressively more of the
++     * radio is powered down, so the draw falls but the wake-up latency grows.
++     * Note the legacy "DeepSleepA" attribute above is the ACTIVE-IDLE draw
++     * (state 0 — cell up, nothing to send); these are the real sleep states.
++     */
++    double GetSleepMicroA (void) const;
++    void SetSleepMicroA (double sleepMicroA);
++    double GetSleepLightA (void) const;
++    void SetSleepLightA (double sleepLightA);
++    double GetSleepDeepA (void) const;
++    void SetSleepDeepA (double sleepDeepA);
++
++    /**
++     * \brief Time (s) this radio has spent in a given state.
++     *
++     * The per-state counters are only credited when the radio LEAVES a state,
++     * so a radio parked in one state (a sleeping or switched-off cell) reads 0
++     * for it. This adds the in-progress slice, which is what a duty-cycle
++     * report actually wants.
++     *
++     * \param state a RadioState code
++     * \returns seconds spent in that state so far
++     */
++    double GetStateTime (int state) const;
++
++    /**
+      * \brief Gets Rx current in Amperes.
+      *
+      * \returns rx current of the mmwave device.
+@@ -212,9 +266,10 @@
+     Time m_lastUpdateTime;
+     double m_txCurrentA;
+     double m_rxCurrentA;
+-    double m_deepSleepCurrentA;
+-    double m_lightSleepCurrentA;
+-    double m_microSleepCurrentA;
++    double m_deepSleepCurrentA;  //!< legacy name: the ACTIVE-IDLE draw (state 0)
++    double m_lightSleepCurrentA; //!< light sleep draw (state 6)
++    double m_microSleepCurrentA; //!< micro sleep draw (state 5)
++    double m_sleepDeepCurrentA;  //!< deep sleep draw (state 7)
+     int m_previousState;
+     int m_currentState;
+     int m_celloff = 0;
+--- src/mmwave/model/mmwave-radio-energy-model-enb.cc.pre_sleep.bak	2026-07-25 14:36:13.958811636 +0300
++++ src/mmwave/model/mmwave-radio-energy-model-enb.cc	2026-07-25 15:12:12.439367900 +0300
+@@ -59,8 +59,25 @@
+                      "Time spent in transmission state",
+                      MakeTraceSourceAccessor (&MmWaveRadioEnergyModelEnb::m_tx_t),
+                      "ns3::TracedValueCallback::Double")
++        .AddTraceSource ("micro_sleep_time",
++                     "Time spent in micro sleep",
++                     MakeTraceSourceAccessor (&MmWaveRadioEnergyModelEnb::m_micro_sleep_t),
++                     "ns3::TracedValueCallback::Double")
++        .AddTraceSource ("light_sleep_time",
++                     "Time spent in light sleep",
++                     MakeTraceSourceAccessor (&MmWaveRadioEnergyModelEnb::m_light_sleep_t),
++                     "ns3::TracedValueCallback::Double")
++        .AddTraceSource ("deep_sleep_time",
++                     "Time spent in deep sleep",
++                     MakeTraceSourceAccessor (&MmWaveRadioEnergyModelEnb::m_deep_sleep_t),
++                     "ns3::TracedValueCallback::Double")
++        .AddTraceSource ("off_time",
++                     "Time spent with the cell switched off",
++                     MakeTraceSourceAccessor (&MmWaveRadioEnergyModelEnb::m_off_t),
++                     "ns3::TracedValueCallback::Double")
+         .AddAttribute ("DeepSleepA",
+-                        "The default Deep Sleep Current in Amperes.",
++                        "The active-idle current in Amperes (state 0: cell up, nothing to send). "
++                        "Legacy attribute name — the real sleep depths are SleepMicroA/Light/Deep.",
+                         DoubleValue (86.3),
+                         MakeDoubleAccessor (&MmWaveRadioEnergyModelEnb::SetDeepSleepA,
+                                             &MmWaveRadioEnergyModelEnb::GetDeepSleepA),
+@@ -77,6 +94,31 @@
+                         MakeDoubleAccessor (&MmWaveRadioEnergyModelEnb::SetTxCurrentA,
+                                             &MmWaveRadioEnergyModelEnb::GetTxCurrentA),
+                         MakeDoubleChecker<double> ())
++        // NSG RU sleep states. Defaults follow the sleep-mode ratios of the
++        // flexible BS power model (Debaillie et al., "A Flexible and
++        // Future-Proof Power Model for Cellular Base Stations", VTC 2015):
++        // relative to the active-idle draw, micro (SM1) ~0.69, light (SM2)
++        // ~0.50, deep (SM3) ~0.33 — with wake-up latencies growing from tens of
++        // microseconds to tens of milliseconds. A cell switched fully OFF
++        // (state 4) still draws 0 A; that is a different, much slower state.
++        .AddAttribute ("SleepMicroA",
++                        "Micro (symbol-level) sleep current in Amperes.",
++                        DoubleValue (59.5),
++                        MakeDoubleAccessor (&MmWaveRadioEnergyModelEnb::SetSleepMicroA,
++                                            &MmWaveRadioEnergyModelEnb::GetSleepMicroA),
++                        MakeDoubleChecker<double> ())
++        .AddAttribute ("SleepLightA",
++                        "Light (slot/subframe-level) sleep current in Amperes.",
++                        DoubleValue (43.2),
++                        MakeDoubleAccessor (&MmWaveRadioEnergyModelEnb::SetSleepLightA,
++                                            &MmWaveRadioEnergyModelEnb::GetSleepLightA),
++                        MakeDoubleChecker<double> ())
++        .AddAttribute ("SleepDeepA",
++                        "Deep sleep current in Amperes.",
++                        DoubleValue (28.5),
++                        MakeDoubleAccessor (&MmWaveRadioEnergyModelEnb::SetSleepDeepA,
++                                            &MmWaveRadioEnergyModelEnb::GetSleepDeepA),
++                        MakeDoubleChecker<double> ())
+   ;
+   return tid;
+ }
+@@ -94,6 +136,10 @@
+     m_data_t=0.0;
+     m_ctrl_t=0.0;
+     m_tx_t=0.0;
++    m_micro_sleep_t=0.0;
++    m_light_sleep_t=0.0;
++    m_deep_sleep_t=0.0;
++    m_off_t=0.0;
+ }
+ 
+ MmWaveRadioEnergyModelEnb::~MmWaveRadioEnergyModelEnb ()
+@@ -155,6 +201,68 @@
+ 
+ 
+ double
++MmWaveRadioEnergyModelEnb::GetSleepMicroA (void) const
++{
++  return m_microSleepCurrentA;
++}
++
++void
++MmWaveRadioEnergyModelEnb::SetSleepMicroA (double sleepMicroA)
++{
++  NS_LOG_FUNCTION (this << sleepMicroA);
++  m_microSleepCurrentA = sleepMicroA;
++}
++
++double
++MmWaveRadioEnergyModelEnb::GetSleepLightA (void) const
++{
++  return m_lightSleepCurrentA;
++}
++
++void
++MmWaveRadioEnergyModelEnb::SetSleepLightA (double sleepLightA)
++{
++  NS_LOG_FUNCTION (this << sleepLightA);
++  m_lightSleepCurrentA = sleepLightA;
++}
++
++double
++MmWaveRadioEnergyModelEnb::GetSleepDeepA (void) const
++{
++  return m_sleepDeepCurrentA;
++}
++
++void
++MmWaveRadioEnergyModelEnb::SetSleepDeepA (double sleepDeepA)
++{
++  NS_LOG_FUNCTION (this << sleepDeepA);
++  m_sleepDeepCurrentA = sleepDeepA;
++}
++
++double
++MmWaveRadioEnergyModelEnb::GetStateTime (int state) const
++{
++  double t = 0.0;
++  switch (state)
++    {
++    case STATE_IDLE:         t = m_idle_t.Get (); break;
++    case STATE_TX:           t = m_tx_t.Get (); break;
++    case STATE_RX_DATA:      t = m_data_t.Get (); break;
++    case STATE_RX_CTRL:      t = m_ctrl_t.Get (); break;
++    case STATE_OFF:          t = m_off_t.Get (); break;
++    case STATE_SLEEP_MICRO:  t = m_micro_sleep_t.Get (); break;
++    case STATE_SLEEP_LIGHT:  t = m_light_sleep_t.Get (); break;
++    case STATE_SLEEP_DEEP:   t = m_deep_sleep_t.Get (); break;
++    default: return 0.0;
++    }
++  if (state == m_currentState)
++    {
++      t += (Simulator::Now () - m_lastUpdateTime).GetSeconds ();
++    }
++  return t;
++}
++
++double
+ MmWaveRadioEnergyModelEnb::GetRxCurrentA (void) const
+ {
+   NS_LOG_FUNCTION (this);
+@@ -240,6 +348,18 @@
+   case 3:
+      m_ctrl_t+=duration.GetSeconds();
+     break;
++  case STATE_OFF:
++     m_off_t+=duration.GetSeconds();
++    break;
++  case STATE_SLEEP_MICRO:
++     m_micro_sleep_t+=duration.GetSeconds();
++    break;
++  case STATE_SLEEP_LIGHT:
++     m_light_sleep_t+=duration.GetSeconds();
++    break;
++  case STATE_SLEEP_DEEP:
++     m_deep_sleep_t+=duration.GetSeconds();
++    break;
+   }
+ 
+ 
+@@ -307,8 +427,14 @@
+       return m_rxCurrentA;
+     case 3:
+       return m_rxCurrentA;
+-    case 4:
++    case STATE_OFF:
+       return m_celloff; // = 0
++    case STATE_SLEEP_MICRO:
++      return m_microSleepCurrentA;
++    case STATE_SLEEP_LIGHT:
++      return m_lightSleepCurrentA;
++    case STATE_SLEEP_DEEP:
++      return m_sleepDeepCurrentA;
+     }
+   NS_FATAL_ERROR ("MmWaveRadioEnergyModelEnb: undefined radio state " << state);
+ }
+--- src/mmwave/model/mmwave-spectrum-phy.cc.pre_sleep.bak	2026-07-25 14:36:13.962811636 +0300
++++ src/mmwave/model/mmwave-spectrum-phy.cc	2026-07-25 14:47:17.559096600 +0300
+@@ -226,12 +226,17 @@
+ {
+   //
+   double es_power = 1;
++  // NSG: the state charged to the energy model while the cell is powered down.
++  // Used to be a hardcoded 4 (= 0 A, cell off); a cell asleep at a given depth
++  // still draws that depth's current, so the device tells us which one it is.
++  int es_state = 4;
+   Ptr<MmWaveEnbNetDevice> enbNetDev = DynamicCast<MmWaveEnbNetDevice> (GetDevice ());
+   if (enbNetDev) // Check for null before using
+     {
+       Ptr<MmWaveEnbPhy> enbPhy = enbNetDev->GetPhy ();
+       // int cellid = enbNetDev->GetCellId();
+       es_power = enbPhy->GetTxPower ();
++      es_state = enbNetDev->GetSleepStateCode ();
+     }
+   //
+   if (m_sleepEnabled)
+@@ -244,7 +249,7 @@
+       m_state = newState;
+       if (es_power == 0)
+         {
+-          m_intState = 4;
++          m_intState = es_state;
+         }
+       else
+         {
+--- src/mmwave/model/mmwave-enb-net-device.h.pre_sleep.bak	2026-07-25 14:36:13.966811636 +0300
++++ src/mmwave/model/mmwave-enb-net-device.h	2026-07-25 14:47:04.559097900 +0300
+@@ -113,6 +113,16 @@
+ 
+             std::map<uint16_t, Ptr<UeManager>> GetUeMap ();
+ 
++            /**
++             * NSG RU sleep state. A cell with TX power 0 used to be charged a
++             * flat 0 A ("off"). A sleeping RU is not off: it draws the current
++             * of its sleep depth and pays a wake-up latency to come back. This
++             * code is what MmWaveSpectrumPhy traces to the energy model while
++             * the cell is powered down — 4 = off, 5/6/7 = micro/light/deep.
++             */
++            void SetSleepStateCode (int code) { m_nsgSleepStateCode = code; }
++            int GetSleepStateCode (void) const { return m_nsgSleepStateCode; }
++
+             bool HasCellId(uint16_t cellId) const;
+ 
+             uint8_t GetBandwidth() const;
+@@ -229,6 +239,8 @@
+             void NewFunction (bool m_is_reported);
+ 
+             std::vector<double> m_prbHistory;
++            //!< NSG: sleep depth charged while this cell is powered down (4=off)
++            int m_nsgSleepStateCode {4};
+             static const size_t MAX_PRB_HISTORY = 10;
+             Time m_checkPeriod;
+             E2Termination::RicSubscriptionRequest_rval_s m_lastSubscriptionParams;
+--- scratch/scenario-zero-with_parallel_loging.cc.pre_sleep.bak	2026-07-25 14:36:13.970811636 +0300
++++ scratch/scenario-zero-with_parallel_loging.cc	2026-07-25 21:26:10.704718300 +0300
+@@ -69,6 +69,9 @@
+ double max_energy_consumption = 0;
+ double sum_curr_total_energy_consumption = 0;
+ int num_of_mmdev = 0;
++// NSG Phase 2a: the per-gNB radio energy models, so the periodic energy print
++// can read each cell's LIVE total instead of the last value the trace pushed.
++std::vector<Ptr<MmWaveRadioEnergyModelEnb>> g_nsgEnergyModels;
+ 
+ /**
+  * Scenario Zero
+@@ -275,6 +278,16 @@
+ void
+ EnergyConsumptionPrint (int nodeIndex)
+ {
++  // NSG: take the model's LIVE total. The TotalEnergyConsumption trace only
++  // fires when the PHY state CHANGES, so a cell parked in one state (asleep,
++  // or switched off) stopped updating and its draw silently disappeared from
++  // the totals — which is exactly the case a sleep-state report is about.
++  if (nodeIndex >= 0 && (size_t) nodeIndex < g_nsgEnergyModels.size () &&
++      g_nsgEnergyModels[nodeIndex])
++    {
++      totalnewEnergyConsumption_storage[nodeIndex] =
++          g_nsgEnergyModels[nodeIndex]->GetTotalEnergyConsumption ();
++    }
+   NS_LOG_UNCOND ("Total energy consumption for mmWave cell "
+                  << nodeIndex + 2 << ": " << totalnewEnergyConsumption_storage[nodeIndex] << "J"
+                  << " at time " << Simulator::Now ().GetSeconds ()
+@@ -448,6 +461,36 @@
+ static ns3::GlobalValue rng_run ("rngRun", "ns-3 RNG run number (fixed => reproducible)",
+                                  ns3::UintegerValue (1),
+                                  ns3::MakeUintegerChecker<uint32_t> ());
++// NSG Phase 2a: per-gNB RU sleep profile, ';'-sep 'depth,idle_ms,wake_ms'
++// aligned with gnbPositionsFile. depth 0=disabled 1=micro 2=light 3=deep.
++// Empty => no sleep management at all (a cell is either serving or, if the
++// config powered it down, off).
++static ns3::GlobalValue gnb_sleep_file ("gnbSleepFile",
++                                        "File of ';'-sep per-gNB 'depth,idle_ms,wake_ms' RU sleep "
++                                        "profiles (depth 0=none 1=micro 2=light 3=deep); empty=none",
++                                        ns3::StringValue (""),
++                                        ns3::MakeStringChecker ());
++// Wake-on-demand threshold: when the cells still awake are transmitting this
++// much of the time, a sleeping cell is brought back (paying its wake latency).
++static ns3::GlobalValue sleep_wake_load ("sleepWakeLoadPct",
++                                         "Awake-cell TX duty (%) that wakes a sleeping cell",
++                                         ns3::DoubleValue (60.0),
++                                         ns3::MakeDoubleChecker<double> (0.0, 100.0));
++// Aggressive variant: also sleep a cell that still has UEs attached but is
++// transmitting less than this. 0 (default) = only sleep cells with no UEs.
++static ns3::GlobalValue sleep_idle_duty ("sleepIdleDutyPct",
++                                         "If >0, sleep attached-but-silent cells below this TX duty (%)",
++                                         ns3::DoubleValue (0.0),
++                                         ns3::MakeDoubleChecker<double> (0.0, 100.0));
++static ns3::GlobalValue sleep_tick_ms ("sleepTickMs", "Sleep controller sampling period (ms)",
++                                       ns3::DoubleValue (20.0),
++                                       ns3::MakeDoubleChecker<double> (1.0, 1000.0));
++// Anti-ping-pong: a cell just woken stays up at least this long, so a network
++// hovering around the wake threshold cannot flap a cell on and off.
++static ns3::GlobalValue sleep_wake_hold_ms ("sleepWakeHoldMs",
++                                            "Minimum time (ms) a woken cell stays awake",
++                                            ns3::DoubleValue (500.0),
++                                            ns3::MakeDoubleChecker<double> (0.0, 60000.0));
+ 
+ // Read a whole file into a string ("" if it can't be opened / path empty).
+ static std::string NsgReadFile (const std::string &fname) {
+@@ -524,6 +567,227 @@
+     return out;
+ }
+ 
++// ---------------------------------------------------------------------------
++// NSG Phase 2a — RU sleep states.
++//
++// A cell used to have exactly two energy states: serving (idle draw or higher)
++// and switched OFF (0 A, only reachable by the config / an E2 power=0 control).
++// A real RU lives in between: with nothing to serve it descends into a sleep
++// depth — micro, light, deep — each drawing less and each costing a longer
++// wake-up latency before it can carry traffic again. This is that state
++// machine: per gNB, driven by measured activity, with the depth charged to the
++// ns-3 radio energy model and the wake-up delay really keeping the cell off
++// the air (TX power 0 + raised noise figure, the same way the E2 energy-state
++// control puts a cell down).
++// ---------------------------------------------------------------------------
++struct NsgSleepCfg {
++    int depth = 0;         // 0=disabled, 1=micro, 2=light, 3=deep
++    double idleMs = 200.0; // shutdown timer: how long idle before descending
++    double wakeMs = 10.0;  // wake-up latency before the cell serves again
++};
++
++struct NsgSleepCell {
++    Ptr<MmWaveEnbNetDevice> dev;
++    Ptr<MmWaveRadioEnergyModelEnb> model;
++    NsgSleepCfg cfg;
++    double cfgPowerDbm = 30.0; // the power to restore on wake
++    uint16_t cellId = 0;
++    bool asleep = false;
++    bool waking = false;
++    double idleSinceS = -1.0;
++    double lastTxT = 0.0;
++    double duty = 0.0; // share of the last tick spent transmitting
++    size_t ues = 0;
++    int sleeps = 0;
++    int wakes = 0;
++    double sleepStartS = 0.0;
++    double sleepTotalS = 0.0;
++    double awakeUntilS = -1.0; // anti-ping-pong hold-down after a wake
++};
++
++static std::vector<NsgSleepCell> g_nsgSleepCells;
++static double g_nsgSleepTickS = 0.02;
++static double g_nsgWakeLoadPct = 60.0;
++static double g_nsgIdleDutyPct = 0.0;
++static double g_nsgWakeHoldS = 0.5;
++
++static const char *
++NsgSleepName (int d) {
++    return d == 1 ? "micro" : d == 2 ? "light" : d == 3 ? "deep" : "none";
++}
++
++// Parse ";"-separated "depth,idle_ms,wake_ms" records. A record may carry just
++// the depth (defaults for the timers), which keeps the UI's simple case simple.
++static std::vector<NsgSleepCfg> NsgParseSleepCfgs (const std::string &s) {
++    std::vector<NsgSleepCfg> out;
++    std::stringstream ss (s);
++    std::string item;
++    while (std::getline (ss, item, ';')) {
++        if (item.find_first_not_of (" \t\r\n") == std::string::npos) continue;
++        std::stringstream is (item);
++        std::string f;
++        std::vector<double> v;
++        while (std::getline (is, f, ',')) {
++            try { v.push_back (std::stod (f)); } catch (...) { }
++        }
++        if (v.empty ()) continue;
++        NsgSleepCfg c;
++        c.depth = (int) v[0];
++        if (c.depth < 0) c.depth = 0;
++        if (c.depth > 3) c.depth = 3;
++        if (v.size () > 1 && v[1] > 0) c.idleMs = v[1];
++        if (v.size () > 2 && v[2] >= 0) c.wakeMs = v[2];
++        out.push_back (c);
++    }
++    return out;
++}
++
++// Wake-up completed: the radio is warm again, so restore the configured power.
++static void NsgSleepWakeDone (size_t i) {
++    if (i >= g_nsgSleepCells.size ()) return;
++    NsgSleepCell &c = g_nsgSleepCells[i];
++    if (!c.waking) return;
++    double now = Simulator::Now ().GetSeconds ();
++    c.dev->GetPhy ()->SetTxPower (c.cfgPowerDbm);
++    c.dev->GetPhy ()->SetNoiseFigure (5);
++    c.dev->SetSleepStateCode (4);
++    c.sleepTotalS += now - c.sleepStartS;
++    c.asleep = false;
++    c.waking = false;
++    c.idleSinceS = -1.0;
++    c.awakeUntilS = now + g_nsgWakeHoldS;
++    c.wakes++;
++    NS_LOG_UNCOND ("[NSG-SLEEP] t=" << now << " cell=" << c.cellId << " AWAKE at "
++                   << c.cfgPowerDbm << " dBm (wake #" << c.wakes << ")");
++}
++
++static void NsgSleepTick () {
++    double now = Simulator::Now ().GetSeconds ();
++
++    // 1) Measure. TX airtime comes from the energy model's own state clock, so
++    //    "busy" means the radio really transmitted, not that traffic was offered.
++    double servingDutySum = 0.0;
++    int servingN = 0;
++    int awakeN = 0;
++    for (NsgSleepCell &c : g_nsgSleepCells) {
++        double txT = c.model ? c.model->m_tx_t.Get () : 0.0;
++        double d = (txT - c.lastTxT) / g_nsgSleepTickS;
++        c.lastTxT = txT;
++        c.duty = d < 0.0 ? 0.0 : (d > 1.0 ? 1.0 : d);
++        c.ues = c.dev ? c.dev->GetUeMap ().size () : 0;
++        if (c.asleep || c.waking) continue;
++        awakeN++;
++        // Only cells actually carrying UEs count as "load". An empty cell still
++        // transmits its broadcast (~7% duty here), and averaging that in would
++        // hide a saturated neighbour behind idle ones.
++        if (c.ues > 0) { servingDutySum += c.duty; servingN++; }
++    }
++    double servingDutyPct = servingN > 0 ? (servingDutySum / servingN) * 100.0 : 0.0;
++
++    // 2) Decide, per cell.
++    for (size_t i = 0; i < g_nsgSleepCells.size (); ++i) {
++        NsgSleepCell &c = g_nsgSleepCells[i];
++        // depth 0 = lever off for this cell; power 0 = the config switched the
++        // cell off entirely, which is a different (much slower) state than sleep.
++        if (c.cfg.depth <= 0 || c.cfgPowerDbm <= 0 || c.waking) continue;
++
++        if (!c.asleep) {
++            bool idle = (c.ues == 0) ||
++                        (g_nsgIdleDutyPct > 0.0 && c.duty * 100.0 < g_nsgIdleDutyPct);
++            if (!idle || now < c.awakeUntilS) { c.idleSinceS = -1.0; continue; }
++            if (c.idleSinceS < 0.0) { c.idleSinceS = now; continue; }
++            if ((now - c.idleSinceS) * 1000.0 < c.cfg.idleMs) continue;
++            // Coverage floor: never put the last mmWave cell down. UEs cannot
++            // attach to a sleeping cell, so an all-asleep layer could never be
++            // woken by demand again — a blackout the controller can't leave.
++            if (awakeN <= 1) continue;
++            c.dev->SetSleepStateCode (4 + c.cfg.depth);
++            c.dev->GetPhy ()->SetTxPower (0);
++            c.dev->GetPhy ()->SetNoiseFigure (100);
++            c.asleep = true;
++            c.sleepStartS = now;
++            c.idleSinceS = -1.0;
++            c.sleeps++;
++            NS_LOG_UNCOND ("[NSG-SLEEP] t=" << now << " cell=" << c.cellId << " -> "
++                           << NsgSleepName (c.cfg.depth) << " sleep (idle "
++                           << c.cfg.idleMs << " ms, ues=" << c.ues << ", duty="
++                           << c.duty * 100.0 << "%)");
++        } else if (servingN > 0 && servingDutyPct >= g_nsgWakeLoadPct) {
++            // Wake on demand: the cells carrying the load are running hot, so
++            // this one is needed again — and it costs its wake-up latency.
++            c.waking = true;
++            NS_LOG_UNCOND ("[NSG-SLEEP] t=" << now << " cell=" << c.cellId << " WAKING (serving-cell duty "
++                           << servingDutyPct << "% >= " << g_nsgWakeLoadPct << "%, +"
++                           << c.cfg.wakeMs << " ms)");
++            Simulator::Schedule (Seconds (c.cfg.wakeMs / 1000.0), &NsgSleepWakeDone, i);
++            break; // one cell per tick — wake gradually, not all at once
++        }
++    }
++    Simulator::Schedule (Seconds (g_nsgSleepTickS), &NsgSleepTick);
++}
++
++// Periodic (NOT end-of-run): the batch orchestrator kills ns-3 long before it
++// reaches --simTime, so an at-exit summary would never be printed. The parsers
++// take the last line per cell. The cadence has to be well under one simulated
++// second — a batch run only advances ~0.5 s of sim time in its whole wall-clock
++// window, so a 1 s summary never printed at all.
++// Matches the energy print cadence, so the last summary and the last energy
++// sample describe the same instant.
++#define NSG_SLEEP_SUMMARY_S 0.1
++static void NsgSleepSummary () {
++    double now = Simulator::Now ().GetSeconds ();
++    for (NsgSleepCell &c : g_nsgSleepCells) {
++        double slept = c.sleepTotalS + (c.asleep ? now - c.sleepStartS : 0.0);
++        NS_LOG_UNCOND ("[NSG-SLEEP-SUM] t=" << now << " cell=" << c.cellId
++                       << " depth=" << NsgSleepName (c.cfg.depth)
++                       << " state=" << (c.waking ? "waking" : (c.asleep ? "asleep" : "awake"))
++                       << " sleeps=" << c.sleeps << " wakes=" << c.wakes
++                       << " sleep_s=" << slept
++                       << " sleep_pct=" << (now > 0.0 ? 100.0 * slept / now : 0.0)
++                       << " duty_pct=" << c.duty * 100.0 << " ues=" << c.ues
++                       << " micro_s=" << (c.model ? c.model->GetStateTime (5) : 0.0)
++                       << " light_s=" << (c.model ? c.model->GetStateTime (6) : 0.0)
++                       << " deep_s=" << (c.model ? c.model->GetStateTime (7) : 0.0)
++                       << " off_s=" << (c.model ? c.model->GetStateTime (4) : 0.0)
++                       << " j=" << (c.model ? c.model->GetTotalEnergyConsumption () : 0.0));
++    }
++    Simulator::Schedule (Seconds (NSG_SLEEP_SUMMARY_S), &NsgSleepSummary);
++}
++
++// Bind the controller to the devices + energy models. Called after both exist.
++static void NsgSleepInit (const NetDeviceContainer &devs,
++                          const energy::DeviceEnergyModelContainer &models,
++                          const std::vector<NsgSleepCfg> &specs) {
++    if (specs.empty ()) return;
++    int managed = 0;
++    for (uint32_t i = 0; i < devs.GetN (); ++i) {
++        Ptr<MmWaveEnbNetDevice> dev = devs.Get (i)->GetObject<MmWaveEnbNetDevice> ();
++        if (!dev || !dev->GetPhy ()) continue;
++        NsgSleepCell c;
++        c.dev = dev;
++        c.model = i < models.GetN ()
++                      ? DynamicCast<MmWaveRadioEnergyModelEnb> (models.Get (i))
++                      : nullptr;
++        c.cfg = specs[i < specs.size () ? i : specs.size () - 1];
++        c.cfgPowerDbm = dev->GetPhy ()->GetTxPower ();
++        c.cellId = dev->GetCellId ();
++        c.lastTxT = c.model ? c.model->m_tx_t.Get () : 0.0;
++        g_nsgSleepCells.push_back (c);
++        if (c.cfg.depth > 0 && c.cfgPowerDbm > 0) managed++;
++        NS_LOG_UNCOND ("[NSG-SLEEP] cell=" << c.cellId << " profile=" << NsgSleepName (c.cfg.depth)
++                       << " idle=" << c.cfg.idleMs << "ms wake=" << c.cfg.wakeMs
++                       << "ms power=" << c.cfgPowerDbm << "dBm"
++                       << (c.cfgPowerDbm <= 0 ? " (config-off, not sleep-managed)" : ""));
++    }
++    if (managed > 0) {
++        Simulator::Schedule (Seconds (g_nsgSleepTickS), &NsgSleepTick);
++        Simulator::Schedule (Seconds (NSG_SLEEP_SUMMARY_S), &NsgSleepSummary);
++        NS_LOG_UNCOND ("[NSG-SLEEP] controller armed for " << managed << " cell(s), tick "
++                       << g_nsgSleepTickS * 1000.0 << " ms, wake at " << g_nsgWakeLoadPct
++                       << "% awake-cell duty");
++    }
++}
++
+ int
+ main(int argc, char *argv[]) {
+     // LogComponentEnableAll(LOG_PREFIX_ALL);
+@@ -1042,6 +1306,31 @@
+ 
+   energy::DeviceEnergyModelContainer deviceEModel = nrEnbHelper.Install (mmWaveEnbDevs, sources);
+ 
++  // NSG Phase 2a: keep the typed models around — the periodic energy print
++  // reads them live, and the sleep controller uses their TX-time clock as the
++  // per-cell activity signal.
++  g_nsgEnergyModels.clear ();
++  for (uint32_t i = 0; i < deviceEModel.GetN (); ++i)
++    {
++      g_nsgEnergyModels.push_back (
++          DynamicCast<MmWaveRadioEnergyModelEnb> (deviceEModel.Get (i)));
++    }
++  {
++    StringValue nsgSleepVal;
++    DoubleValue nsgSleepDbl;
++    GlobalValue::GetValueByName ("sleepTickMs", nsgSleepDbl);
++    g_nsgSleepTickS = nsgSleepDbl.Get () / 1000.0;
++    GlobalValue::GetValueByName ("sleepWakeLoadPct", nsgSleepDbl);
++    g_nsgWakeLoadPct = nsgSleepDbl.Get ();
++    GlobalValue::GetValueByName ("sleepIdleDutyPct", nsgSleepDbl);
++    g_nsgIdleDutyPct = nsgSleepDbl.Get ();
++    GlobalValue::GetValueByName ("sleepWakeHoldMs", nsgSleepDbl);
++    g_nsgWakeHoldS = nsgSleepDbl.Get () / 1000.0;
++    GlobalValue::GetValueByName ("gnbSleepFile", nsgSleepVal);
++    NsgSleepInit (mmWaveEnbDevs, deviceEModel,
++                  NsgParseSleepCfgs (NsgReadFile (nsgSleepVal.Get ())));
++  }
++
+   GlobalValue::GetValueByName ("simTime", doubleValue);
+   double simTime = doubleValue.Get ();
+   int numPrints = simTime / 0.1;

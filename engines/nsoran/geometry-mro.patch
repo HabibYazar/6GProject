@@ -1,0 +1,82 @@
+# NSG — node heights, antenna spacing, cell selection, the DynamicTtt curve and
+# the RU power profile. Second batch of the parameter-parity push.
+#
+# Four of these needed NO C++ at all: they are plain LteEnbRrc /
+# MmWaveRadioEnergyModelEnb attributes that nothing was passing. The other two
+# are small scenario edits. The pattern of this whole effort holds — most of
+# what looked missing was reachable, just unrouted.
+#
+# ── WIRED ──────────────────────────────────────────────────────────────────
+# * NODE HEIGHTS. NsgParsePositions hardcoded z=3 for EVERY node, so
+#   base_stations[].position.z and the (new) ue_groups[].height_m were both
+#   inert: a 32 m macro mast, a 1.5 m handset and a 60 m drone were the same
+#   height to the channel model. That silently flattens every elevation-
+#   dependent effect — including the antenna downtilt shipped in Phase 2c, which
+#   was being measured against a geometry where nothing had a height.
+#   Positions now carry an optional third field; two-field records still parse
+#   and keep the old 3 m.
+# * ANTENNA ELEMENT SPACING -> UniformPlanarArray::AntennaHorizontal/
+#   VerticalSpacing, as fields 6 and 7 of the per-gNB antenna spec (0.5
+#   wavelengths default, the 3GPP value). Tighter couples the elements and
+#   broadens the beam; wider sharpens it and raises grating lobes.
+# * settings.outage_threshold_db -> LteEnbRrc::OutageThreshold. The serving-SINR
+#   floor below which a UE gives up on mmWave and falls back to the LTE anchor.
+#   It is also the floor ho_a2_threshold_db (Phase 2b) has to sit above to be
+#   reachable at all — we shipped the A2 lever without exposing the boundary
+#   that constrains it.
+# * settings.q_rx_lev_min_dbm -> LteEnbRrc::QRxLevMin. 3GPP TS 36.133 cell
+#   (re)selection: the minimum RSRP before a UE may camp. The reselection row
+#   the VIAVI parity read listed as missing.
+# * THE DynamicTtt CURVE -> MinDynTttValue / MaxDynTttValue / MinDiffValue /
+#   MaxDiffValue. DynamicTtt is the DEFAULT handover mode and only the FixedTtt
+#   value was exposed, so the mode the engine actually runs had none of its four
+#   parameters reachable. This is the shape of the whole curve: how long to wait
+#   when a neighbour is marginally better vs overwhelmingly better.
+# * RU POWER PROFILE -> TxCurrentA / RxCurrentA / DeepSleepA (a legacy attribute
+#   name for active-idle). The VIAVI energy profile's standby-watts /
+#   fixed-consumption side, which the Phase 2a sleep depths step DOWN from — we
+#   had the depths without the baseline they descend from. Sent only when the
+#   config overrides them, so the engine's built-in model stays in charge.
+#
+# ── Trap this cost a rebuild ───────────────────────────────────────────────
+# The scripts were patched with a Python one-liner opened in text mode on
+# Windows, which rewrote both run_*.sh with CRLF. bash then died on
+# `cleanup() {\r` and ns-3 never launched, so all five variants came back
+# "no_data" with no scenario log at all — a failure that looks like an engine
+# fault and is a line-ending. When editing files that live in WSL from the
+# Windows side, write with newline="\n" (or run sed -i 's/\r$//' after).
+#
+# ── UNIT TRAP: QRxLevMin is NOT in dBm ─────────────────────────────────────
+# ns-3 takes it in the 3GPP TS 36.133 SIGNALLED unit — 2 dB steps, checker range
+# -70..-22, meaning -140..-44 dBm. The schema field is in dBm (which is what a
+# user thinks in), so the platform divides by 2. Passing dBm straight through is
+# REJECTED by the attribute checker, which aborts ns-3 before it starts — and
+# that surfaces as the engine returning "no_data" with no scenario log, i.e. it
+# looks like an engine fault, not like a bad parameter. Worth remembering for
+# every future pass-through: a rejected attribute is indistinguishable from a
+# dead engine unless you read /tmp/scn0.log.
+#
+# ── Measured (2026-07-26, engines/nsoran/test_geometry_mro.py, PASS) ───────
+# 3 cells at 32/18/25 m, 6 UEs, 50 Mbps/UE offered, shadowing on:
+#
+#   A  UE height 1.5 m                    17.77 Mbps/UE   4475 W   z seen [1.5]
+#   B  UE height 60 m (drone fleet)        9.59            6748 W   z seen [60.0]
+#   C  element spacing 0.9 wavelengths    14.23            5096 W
+#   D  outage -12 dB, QRxLevMin -60,      17.76            4475 W
+#      DynamicTtt curve 40-200 ms
+#   E  RU idle current 400 A              17.75            7088 W  (+58.4%)
+#
+# * Heights are asserted against the scenario's OWN position trace (it prints
+#   x:y:z per UE), so this is not a plumbing claim — the nodes are where the
+#   config put them. Every node used to report z=3.0.
+# * A 60 m drone fleet measures 9.59 vs 17.77 Mbps/UE at 1.5 m on identical
+#   geometry: real elevation-dependent propagation, which was impossible to see
+#   while every node sat at the same height.
+# * The LteEnbRrc attributes are pass-through, and ns-3 aborts on a value its
+#   checker rejects, so a healthy run IS the check that the value was accepted.
+# * RU idle current 400 A vs the model's ~61 A: 4475 -> 7088 W (+58.4%) with
+#   throughput unchanged, which is the right signature for an idle-power knob.
+#   Doubling it (to 120 A) moved power only ~9% — on a loaded network the cells
+#   are transmitting most of the time and the idle term is a minority share, so
+#   a small multiplier lands inside the harness's own run-to-run noise. Assert
+#   with a big multiplier, or build an idle-cell geometry.

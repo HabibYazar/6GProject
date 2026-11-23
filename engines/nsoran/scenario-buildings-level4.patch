@@ -1,0 +1,82 @@
+# NSG Level-4 — real buildings in the ns-O-RAN engine.
+#
+# Reference patch for the EXTERNAL ns-3 tree (mmwave-LENA-oran, in the
+# Ubuntu-2004-nsoran distro — not in this repo). Applies to:
+#   scratch/scenario-zero-with_parallel_loging.cc
+#
+# WHY: the scenario used ThreeGppUmiStreetCanyonChannelConditionModel — a
+# STOCHASTIC LOS/NLOS model. The user's buildings never reached the engine, so the
+# RIC's "real" tier ignored the obstacles drawn on the map. ns-3's buildings module
+# ships BuildingsChannelConditionModel, which derives LOS/NLOS from real geometry;
+# the 3GPP pathloss then applies its NLOS branch behind an obstacle. UE mobility is
+# already RandomWalk2dOutdoorMobilityModel (buildings-aware), so it fits.
+#
+# Backend pairs: main.py _fmt_buildings() sends ';'-sep
+# "xmin,xmax,ymin,ymax,zmin,zmax,wall" in SCENARIO coords (translated by the same
+# shared scene centroid as cells/UEs); run_scenario.sh / run_live_session.sh pass
+# NSG_BUILDINGS -> --buildingsFile.
+
+ #include "ns3/mobility-module.h"
++#include "ns3/buildings-module.h"   // NSG Level-4: real buildings from the config
+ #include "ns3/applications-module.h"
+
++// NSG Level-4: real buildings from the platform config. Same file mechanism as
++// positions/power. Non-empty => LOS/NLOS comes from the ACTUAL geometry.
++static ns3::GlobalValue buildings_file ("buildingsFile",
++                                        "File of ';'-sep 'xmin,xmax,ymin,ymax,zmin,zmax,wall' buildings; empty=none",
++                                        ns3::StringValue (""),
++                                        ns3::MakeStringChecker ());
+
++// Parse + create the buildings. wall: 0=wood 1=concrete-with-windows 2=concrete.
++static int NsgCreateBuildings (const std::string &s) {
++    int n = 0;
++    std::stringstream ss (s);
++    std::string item;
++    while (std::getline (ss, item, ';')) {
++        if (item.find_first_not_of (" \t\r\n") == std::string::npos) continue;
++        std::stringstream is (item);
++        std::string f;
++        std::vector<double> v;
++        while (std::getline (is, f, ',')) { try { v.push_back (std::stod (f)); } catch (...) { } }
++        if (v.size () < 6) continue;
++        ns3::Ptr<ns3::Building> b = ns3::CreateObject<ns3::Building> ();
++        b->SetBoundaries (ns3::Box (v[0], v[1], v[2], v[3], v[4], v[5]));
++        int wall = (v.size () > 6) ? (int) v[6] : 2;
++        b->SetExtWallsType (wall == 0 ? ns3::Building::Wood
++                            : wall == 1 ? ns3::Building::ConcreteWithWindows
++                                        : ns3::Building::ConcreteWithoutWindows);
++        b->SetBuildingType (ns3::Building::Office);
++        b->SetNFloors (1); b->SetNRoomsX (1); b->SetNRoomsY (1);
++        ++n;
++    }
++    return n;
++}
+
+ # --- in main(), where the mmWave helper picks its channel models ---
+     mmwaveHelper->SetPathlossModelType("ns3::ThreeGppUmiStreetCanyonPropagationLossModel");
+-    mmwaveHelper->SetChannelConditionModelType("ns3::ThreeGppUmiStreetCanyonChannelConditionModel");
++    // NSG Level-4: buildings in the config => LOS/NLOS from REAL geometry.
++    std::string nsgBuildingsSpec;
++    {
++        StringValue nsgBldVal;
++        GlobalValue::GetValueByName ("buildingsFile", nsgBldVal);
++        nsgBuildingsSpec = NsgReadFile (nsgBldVal.Get ());
++    }
++    if (!nsgBuildingsSpec.empty ())
++        mmwaveHelper->SetChannelConditionModelType("ns3::BuildingsChannelConditionModel");
++    else
++        mmwaveHelper->SetChannelConditionModelType("ns3::ThreeGppUmiStreetCanyonChannelConditionModel");
+
+ # --- in main(), AFTER mobility is installed and BEFORE the devices are built ---
+     uemobility.Install(ueNodes);
++    if (!nsgBuildingsSpec.empty ()) {
++        int nsgNumBld = NsgCreateBuildings (nsgBuildingsSpec);
++        // Install unconditionally: the channel condition model was already
++        // switched to BuildingsChannelConditionModel from the spec being
++        // non-empty, and it dereferences every node's MobilityBuildingInfo. A
++        // spec that parses to zero buildings (malformed input) used to skip the
++        // install and abort the run on the first packet with a null deref.
++        BuildingsHelper::Install (allEnbNodes);
++        BuildingsHelper::Install (ueNodes);
++        NS_LOG_UNCOND ("[NSG] " << nsgNumBld << " buildings installed -> BuildingsChannelConditionModel");
++    }

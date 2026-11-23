@@ -1,0 +1,57 @@
+# NSG — beamforming model, control-plane realism, and which KPM families the
+# engine collects.
+#
+# Two of these are HONESTY knobs rather than performance ones. The engine's
+# defaults quietly flatter it, and neither was reachable.
+#
+# ── WIRED ──────────────────────────────────────────────────────────────────
+# * settings.beamforming_model -> MmWaveHelper::BeamformingModel.
+#   The default MmWaveSvdBeamforming solves for the BEST POSSIBLE beam from
+#   perfect channel knowledge — an upper bound, not a product. MmWaveDftBeamforming
+#   steers from a DFT grid and MmWaveCodebookBeamforming is restricted to a
+#   finite codebook, which is what real hardware does. MEASURED: SVD 14.53 ->
+#   DFT 11.11 Mbps/UE, -23.5%. That gap is roughly the optimism in every number
+#   this project has produced so far.
+# * settings.use_ideal_rrc -> MmWaveHelper::UseIdealRrc, was hardcoded TRUE.
+#   With ideal RRC every attach and handover completes instantly and the control
+#   plane costs nothing. Needed a GlobalValue (the scenario Config::SetDefault's
+#   it after cmd.Parse). Relevant to the Phase-2b handover work: those handovers
+#   were all instantaneous.
+# * settings.use_pdsch_for_cqi -> MmWaveHelper::UsePdschForCqiGeneration.
+# * settings.rrc_t300_ms -> LteUeRrc::T300 (RRC setup timeout). Note the ns-3
+#   time syntax: `+250ms`.
+# * settings.kpm_report_du / kpm_report_cu_up / kpm_report_cu_cp -> the e2du /
+#   e2cuUp / e2cuCp GlobalValues. These decide the MEASUREMENT SURFACE, not the
+#   simulation: switching DU off measurably removes DU metrics (3/3 -> 1/3 of
+#   DRB.UEThpDl / RRU.PrbUsedDl / L3servingSINR), and the run then reports
+#   "partial" BY DESIGN — that is the toggle working, not a fault.
+#   e2du and reducedPmValues had been hardcoded in the run scripts' argument
+#   line (`--e2du=1 --reducedPmValues=0`); they are now env-driven.
+#
+# ── NOT SHIPPED: reduced PM values crash the encoder ───────────────────────
+# reducedPmValues=true aborts at t=0.127 s with
+#   "Error during the encoding of the RIC Indication Message, errno: Bad file
+#    descriptor, failed_type indicationMessage-formats"  (kpm-indication.cc:459)
+# The reduced PM container builds a message the ASN.1 encoder rejects. The run
+# scripts always passed 0, so upstream never exercised the path. No schema
+# field — the third time this rule has applied (dead schedulers, data error
+# model, now this): a config must not be able to produce a crashed run.
+# NSG_KPM_REDUCED still reaches the engine API, and the test asserts the broken
+# state so an upstream fix surfaces.
+#
+# ── Measured (2026-07-26, engines/nsoran/test_beamforming_kpm.py, PASS) ────
+# 3 cells, 6 UEs, 50 Mbps/UE, shadowing on, seed 11:
+#
+#   A  SVD beamforming, ideal RRC     14.53 Mbps/UE  PRB 41.3  DU 3/3
+#   B  DFT beamforming                11.11  (-23.5%) PRB 20.3  DU 3/3
+#   C  ideal RRC OFF                  16.68          PRB 38.3  DU 3/3
+#   D  DU KPM reporting OFF            —             —         DU 1/3  (partial)
+#   E  reduced PM values                                       (crashed)
+#
+# * The DFT drop is the headline: a beam a real radio could form is worth 23.5%
+#   less than the optimum the engine hands you by default.
+# * Turning ideal RRC off MEASURED HIGHER (16.68 vs 14.53). Do not read that as
+#   "real signalling is faster" — the run reaches a different point in the
+#   attach sequence within the same wall-clock window, so the comparison is not
+#   like-for-like. What is proven is that the switch reaches the engine; its
+#   effect on handover latency needs the /sim/run horizon, not a 0.8 s batch.

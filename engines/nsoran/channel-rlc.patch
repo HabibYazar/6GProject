@@ -1,0 +1,67 @@
+# NSG — channel realism (blockage, O2I penetration, channel ageing) + RLC,
+# and a fix for a lever that only LOOKED wired.
+#
+# ── The bug this batch found in the previous batch ─────────────────────────
+# settings.outage_threshold_db shipped in geometry-mro.patch routed to
+# --ns3::LteEnbRrc::OutageThreshold. The scenario Config::SetDefault's that same
+# attribute AFTER cmd.Parse from its own `outageThreshold` GlobalValue, so the
+# command-line value was silently overwritten: the field reached the engine
+# payload, ns-3 accepted the argument, the run was healthy, and the number did
+# nothing. The test passed it because "ns-3 accepted this argument" is a
+# different claim from "the value took effect".
+#
+# That is exactly the limitation recorded for tools/param_audit.py — payload
+# delivery is necessary, not sufficient — and it is the third time this specific
+# post-cmd.Parse Config::SetDefault trap has bitten (HARQ, NumHarqProcess, now
+# this). RULE: before routing anything through --ns3::X::Y, grep the scenario for
+# Config::SetDefault on that exact attribute. If it is there, use a GlobalValue.
+# Now routed to --outageThreshold, and the test asserts the EFFECT by reading the
+# threshold the scenario itself prints at startup.
+#
+# ── WIRED — channel realism ────────────────────────────────────────────────
+# * settings.blockage_enabled + blocker_speed_mps + non_self_blocking_count +
+#   portrait_mode -> ThreeGppChannelModel::Blockage / BlockerSpeed /
+#   NumNonselfBlocking / PortraitMode. The 3GPP TR 38.901 blockage model: bodies
+#   and objects that intermittently cut the beam, plus self-blocking by the
+#   user's own hand and body (portrait vs landscape grip).
+#   THIS IS THE CHARACTERISTIC mmWAVE IMPAIRMENT — tens of dB from a hand at
+#   28 GHz — AND THE ENGINE SHIPS IT OFF. Every run this project has measured so
+#   far has been optimistic about link stability. Default stays false so old
+#   results remain reproducible, but a realistic scenario should turn it on.
+# * scatterer_speed_mps -> vScatt: Doppler from a moving environment even when
+#   the UE is stationary.
+# * building_penetration_loss -> ThreeGppPropagationLossModel::
+#   BuildingPenetrationLossesEnabled — outdoor-to-indoor loss, pairing with the
+#   buildings the user draws.
+# * channel_update_ms -> ThreeGppChannelModel::UpdatePeriod, was hardcoded
+#   100 ms. Needed a GlobalValue for the post-cmd.Parse reason above.
+#
+# ── WIRED — RLC ───────────────────────────────────────────────────────────
+# * rlc_am_enabled -> MmWaveHelper::RlcAmEnabled (AM retransmits per PDU, UM
+#   does not — reliability vs latency, and UM is the engine default).
+# * rlc_buffer_mb -> the scenario's own `bufferSize` GlobalValue (same
+#   post-parse reason). Too small drops bursts at the RLC; very large shows up
+#   as bufferbloat latency instead.
+# * rlc_reordering_timer_ms, rlc_poll_retransmit_ms, rlc_status_prohibit_ms ->
+#   LteRlcAm/LteRlcUm timers. Note the ns-3 time syntax: `+5ms`, not `5`.
+#
+# ── Measured (2026-07-26, engines/nsoran/test_channel_rlc.py, PASS) ───────
+# 3 cells, 6 UEs, 50 Mbps/UE, shadowing on, seed 11:
+#
+#   A  defaults (blockage OFF)          14.52 Mbps/UE  PRB 41.3  outage -5
+#   B  blockage ON, 8 blockers @ 3 m/s  13.71  (-5.6%) PRB 37.3
+#   C  channel update 100 -> 10 ms      19.42          PRB  9.0
+#   D  RLC AM, 40 MB, slower timers     18.44          PRB 35.2
+#   E  outage threshold -9 dB           14.39          PRB 42.0  outage -9
+#
+# * Blockage costs 5.6% here with 8 blockers. Modest because the geometry is
+#   short-range and open; the model bites hardest on long NLOS links. What
+#   matters is that it is now reachable at all.
+# * The channel update period is the surprise: regenerating every 10 ms instead
+#   of 100 gave MORE throughput (19.42 vs 14.52) at a QUARTER of the PRB. A
+#   channel refreshed 10x more often tracks the beam properly, so the scheduler
+#   stops paying for stale beamforming. Read this as a fidelity knob with a real
+#   simulation-time cost, not a free win — and note that every earlier
+#   measurement in this project ran at the stale 100 ms.
+# * The outage threshold now reads back as -9 from the scenario's own startup
+#   line, which is the proof the routing fix works.

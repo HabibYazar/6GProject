@@ -1,0 +1,369 @@
+{
+  "scenario": "Partition test \u2014 6 cells / 36 UEs",
+  "frames": 40,
+  "repeats": 3,
+  "cells": 6,
+  "ues": 36,
+  "engine_image": "nsg-engine:1.30-guard",
+  "measured_at": "2026-09-20T23:29:52",
+  "excluded": {
+    "DRB.PdcpSduDelayDl": "swings 14x across repeats of the SAME config and seed (41-574 ms) against 1.1x for throughput \u2014 4-5 samples, the first carrying attach-time buffering",
+    "DRB.PdcpSduDelayUl": "same sample-count problem as the downlink figure",
+    "L3servingSINR": "moves the WRONG WAY under real interference: a burst term that took block errors from 0% to 24.6% and cut throughput 54% RAISED the reported SINR from 14.25 to 21.0 dB"
+  },
+  "metrics": {
+    "DRB.UEThpDl": {
+      "label": "downlink per UE",
+      "same_seed": {
+        "n": 3,
+        "mean": 25125.0,
+        "min": 25125.0,
+        "max": 25125.0,
+        "pct": 0.0
+      },
+      "across_seeds": {
+        "n": 3,
+        "mean": 24729.167,
+        "min": 23937.5,
+        "max": 25125.0,
+        "pct": 4.8
+      },
+      "band_pct": 3.3,
+      "tolerance_pct": 5.0,
+      "seeds_for_15pct": 1,
+      "seeds_for_10pct": 1,
+      "contract": false,
+      "underflowed_frames": null,
+      "name_collision": null,
+      "responsibility": "tier_b",
+      "responsibility_why": "",
+      "frames_present": 5.5
+    },
+    "RRU.PrbUsedDl": {
+      "label": "spectrum in use",
+      "same_seed": {
+        "n": 3,
+        "mean": 15.0,
+        "min": 15.0,
+        "max": 15.0,
+        "pct": 0.0
+      },
+      "across_seeds": {
+        "n": 3,
+        "mean": 13.833,
+        "min": 12.5,
+        "max": 15.0,
+        "pct": 18.1
+      },
+      "band_pct": 12.3,
+      "tolerance_pct": 12.3,
+      "seeds_for_15pct": 3,
+      "seeds_for_10pct": 5,
+      "contract": true,
+      "underflowed_frames": null,
+      "name_collision": null,
+      "responsibility": "engine_metric",
+      "responsibility_why": "the engine's own figure is inconsistent with its own transport blocks: bytes per block over the symbols this metric implies exceeds the MCS table's ceiling in five of six breadth cases, by 1.03-1.57x, so it under-reports the airtime that was used. It has form \u2014 prb-truncation-fix.patch caught it reading exactly 0.0 while UEs carried 8.9 Mbps",
+      "frames_present": 5.5
+    },
+    "TB.TotNbrDl.1": {
+      "label": "transport blocks sent",
+      "same_seed": {
+        "n": 3,
+        "mean": 3876.333,
+        "min": 3874.5,
+        "max": 3879.5,
+        "pct": 0.1
+      },
+      "across_seeds": {
+        "n": 3,
+        "mean": 4075.0,
+        "min": 3863.5,
+        "max": 4329.0,
+        "pct": 11.4
+      },
+      "band_pct": 7.8,
+      "tolerance_pct": 7.8,
+      "seeds_for_15pct": 1,
+      "seeds_for_10pct": 2,
+      "contract": true,
+      "underflowed_frames": null,
+      "name_collision": null,
+      "responsibility": "tier_b",
+      "responsibility_why": "",
+      "frames_present": 5.5
+    },
+    "TB.ErrTotalNbrDl.1": {
+      "label": "transport blocks in error",
+      "same_seed": {
+        "n": 3,
+        "mean": 1011.667,
+        "min": 1000.0,
+        "max": 1017.5,
+        "pct": 1.7
+      },
+      "across_seeds": {
+        "n": 3,
+        "mean": 781.5,
+        "min": 460.0,
+        "max": 1028.0,
+        "pct": 72.7
+      },
+      "band_pct": 49.6,
+      "tolerance_pct": 49.6,
+      "seeds_for_15pct": 33,
+      "seeds_for_10pct": 74,
+      "contract": true,
+      "underflowed_frames": null,
+      "name_collision": null,
+      "responsibility": "tier_b",
+      "responsibility_why": "",
+      "frames_present": 5.5
+    },
+    "TB.TotNbrDlInitial.64Qam": {
+      "label": "blocks at 64QAM",
+      "same_seed": {
+        "n": 3,
+        "mean": 3581.667,
+        "min": 3580.0,
+        "max": 3584.5,
+        "pct": 0.1
+      },
+      "across_seeds": {
+        "n": 3,
+        "mean": 3853.167,
+        "min": 3827.0,
+        "max": 3869.0,
+        "pct": 1.1
+      },
+      "band_pct": 0.8,
+      "tolerance_pct": 5.0,
+      "seeds_for_15pct": 1,
+      "seeds_for_10pct": 1,
+      "contract": true,
+      "underflowed_frames": null,
+      "name_collision": null,
+      "responsibility": "tier_b",
+      "responsibility_why": "",
+      "frames_present": 5.5
+    },
+    "TB.TotNbrDlInitial.Qpsk": {
+      "label": "blocks at QPSK",
+      "same_seed": {
+        "n": 3,
+        "mean": 405.0,
+        "min": 399.5,
+        "max": 416.0,
+        "pct": 4.1
+      },
+      "across_seeds": {
+        "n": 3,
+        "mean": 436.0,
+        "min": 194.0,
+        "max": 787.5,
+        "pct": 136.1
+      },
+      "band_pct": 92.8,
+      "tolerance_pct": 92.8,
+      "seeds_for_15pct": 115,
+      "seeds_for_10pct": 259,
+      "contract": false,
+      "underflowed_frames": null,
+      "name_collision": null,
+      "responsibility": "tier_b",
+      "responsibility_why": "",
+      "frames_present": 5.5
+    },
+    "DRB.PdcpSduBitRateDl": {
+      "label": "PDCP bitrate downlink",
+      "same_seed": {
+        "n": 0,
+        "mean": null,
+        "pct": null
+      },
+      "across_seeds": {
+        "n": 0,
+        "mean": null,
+        "pct": null
+      },
+      "band_pct": null,
+      "tolerance_pct": 5.0,
+      "seeds_for_15pct": null,
+      "seeds_for_10pct": null,
+      "contract": false,
+      "underflowed_frames": null,
+      "name_collision": null,
+      "responsibility": "tier_b",
+      "responsibility_why": "",
+      "frames_present": 0.0
+    },
+    "DRB.BufferSize.Qos": {
+      "label": "data queued",
+      "same_seed": {
+        "n": 3,
+        "mean": 6153283.167,
+        "min": 6117510.0,
+        "max": 6173658.5,
+        "pct": 0.9
+      },
+      "across_seeds": {
+        "n": 3,
+        "mean": 6293285.5,
+        "min": 6189022.0,
+        "max": 6414443.0,
+        "pct": 3.6
+      },
+      "band_pct": 2.5,
+      "tolerance_pct": 5.0,
+      "seeds_for_15pct": 1,
+      "seeds_for_10pct": 1,
+      "contract": true,
+      "underflowed_frames": null,
+      "name_collision": null,
+      "responsibility": "horizon",
+      "responsibility_why": "MEASURED: the queue has a time constant of about four simulated seconds and the reference run covers two, so it is sampled halfway up a ramp. At kpm_collect_s=6 the per-UE queue goes 3.6 MB at sim_t 1.1, 6.0-8.6 at 2.1, and 10.2 at 4.0 \u2014 the 10 MB cap, which is where Tier B sits from its first window because it has no ramp. This is not a mechanism difference and not a metric fault; it is two points on the same transient. The real fix is to measure the criterion past it, which costs about 25 minutes an arm instead of 8",
+      "frames_present": 5.5
+    },
+    "QosFlow.PdcpPduVolumeDL": {
+      "label": "bytes delivered",
+      "same_seed": {
+        "n": 3,
+        "mean": 2799975.167,
+        "min": 2793316.0,
+        "max": 2811489.5,
+        "pct": 0.6
+      },
+      "across_seeds": {
+        "n": 3,
+        "mean": 2740147.333,
+        "min": 2509537.0,
+        "max": 2896910.0,
+        "pct": 14.1
+      },
+      "band_pct": 9.6,
+      "tolerance_pct": 9.6,
+      "seeds_for_15pct": 2,
+      "seeds_for_10pct": 3,
+      "contract": false,
+      "underflowed_frames": null,
+      "name_collision": {
+        "ratio": 16.2,
+        "low_n": 6,
+        "low_max": 2242.0,
+        "high_n": 18,
+        "high_min": 36288.62
+      },
+      "responsibility": "tier_b",
+      "responsibility_why": "",
+      "frames_present": 5.5
+    },
+    "ue_count": {
+      "label": "ue_count",
+      "same_seed": {
+        "n": 3,
+        "mean": 32.167,
+        "min": 32.167,
+        "max": 32.167,
+        "pct": 0.0
+      },
+      "across_seeds": {
+        "n": 3,
+        "mean": 31.456,
+        "min": 30.5,
+        "max": 32.2,
+        "pct": 5.4
+      },
+      "band_pct": 3.7,
+      "tolerance_pct": 5.0,
+      "seeds_for_15pct": 1,
+      "seeds_for_10pct": 1,
+      "contract": true,
+      "underflowed_frames": null,
+      "name_collision": null,
+      "responsibility": "tier_b",
+      "responsibility_why": "",
+      "frames_present": null
+    },
+    "handovers": {
+      "label": "handovers",
+      "same_seed": {
+        "n": 3,
+        "mean": 13.0,
+        "min": 13,
+        "max": 13,
+        "pct": 0.0
+      },
+      "across_seeds": {
+        "n": 3,
+        "mean": 10.0,
+        "min": 9,
+        "max": 11,
+        "pct": 20.0
+      },
+      "band_pct": 13.6,
+      "tolerance_pct": 13.6,
+      "seeds_for_15pct": 3,
+      "seeds_for_10pct": 6,
+      "contract": true,
+      "underflowed_frames": null,
+      "name_collision": null,
+      "responsibility": "structural",
+      "responsibility_why": "the engine runs RandomWalk2dOutdoorMobilityModel wherever no waypoints are given. A deterministic walk can reproduce the RATE of boundary crossings and not which UE crosses when, in either direction, and the mobility breadth case measures 7.0x",
+      "frames_present": null
+    },
+    "block error rate": {
+      "label": "block error rate",
+      "same_seed": {
+        "n": 3,
+        "mean": 10.284,
+        "min": 10.236,
+        "max": 10.308,
+        "pct": 0.7
+      },
+      "across_seeds": {
+        "n": 3,
+        "mean": 10.109,
+        "min": 8.991,
+        "max": 10.964,
+        "pct": 19.5
+      },
+      "band_pct": 13.3,
+      "tolerance_pct": 13.3,
+      "seeds_for_15pct": 3,
+      "seeds_for_10pct": 6,
+      "contract": true,
+      "underflowed_frames": null,
+      "name_collision": null,
+      "responsibility": "tier_b",
+      "responsibility_why": "",
+      "frames_present": null
+    },
+    "64QAM share": {
+      "label": "64QAM share",
+      "same_seed": {
+        "n": 3,
+        "mean": 92.512,
+        "min": 92.512,
+        "max": 92.512,
+        "pct": 0.0
+      },
+      "across_seeds": {
+        "n": 3,
+        "mean": 92.115,
+        "min": 90.918,
+        "max": 93.62,
+        "pct": 2.9
+      },
+      "band_pct": 2.0,
+      "tolerance_pct": 5.0,
+      "seeds_for_15pct": 1,
+      "seeds_for_10pct": 1,
+      "contract": false,
+      "underflowed_frames": null,
+      "name_collision": null,
+      "responsibility": "tier_b",
+      "responsibility_why": "",
+      "frames_present": null
+    }
+  }
+}

@@ -1,0 +1,135 @@
+# NSG AI Platform — the whole appliance, on one Docker host.
+#
+#   cp .env.example .env      # fill NSG_DB_PASSWORD, NSG_AUTH_SECRET, the API key
+#   docker compose up -d --build
+#   open http://localhost:3000
+#
+# Everything is bound to 127.0.0.1. This is an on-prem RIC test appliance: the
+# operator reaches it from the machine or through their own reverse proxy, and
+# nothing here should be answering on a public interface by accident.
+#
+# THE ENGINE IMAGE IS NOT BUILT HERE. `nsg-engine` is a ~1.5 GB ns-3 / FlexRIC /
+# e2sim tree built by engines/nsoran/build-slim.sh, which takes tens of minutes
+# and needs that source tree; compose consumes the finished image. On the
+# development box it lives in the SEPARATE Ubuntu-2004-nsoran WSL distro's
+# Docker daemon, so it has to be moved into this one first:
+#
+#   wsl -d Ubuntu-2004-nsoran -u root -e \
+#       bash -lc 'docker save nsg-engine:1.12' > nsg-engine-1.12.tar
+#   docker load < nsg-engine-1.12.tar
+#
+# On a real single-host deployment that split does not exist and the image is
+# simply present (or pulled from a registry).
+
+services:
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: nsg
+      POSTGRES_DB: nsg
+      POSTGRES_PASSWORD: ${NSG_DB_PASSWORD:?set NSG_DB_PASSWORD in .env}
+    volumes:
+      - nsg-db:/var/lib/postgresql/data
+    # Published so the existing tools (preflight, nsg_user.py, psql) keep
+    # working against the compose database. 5433 matches what they expect.
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nsg -d nsg"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  engine:
+    image: ${NSG_ENGINE_IMAGE:-nsg-engine:1.12}
+    # ns-3 leaves orphaned children behind on a crash; PID 1 has to reap them.
+    init: true
+    # NOT published, on purpose. These ports take a scenario payload whose
+    # extra_args was a proven shell pass-through (a POST to :8090 ran a command
+    # on the host). It is fixed, but the port has no authentication of its own,
+    # so the only thing that should be able to talk to it is the backend — which
+    # reaches it over this network by service name.
+    expose:
+      - "8090"
+      - "8091"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+      engine:
+        condition: service_started
+    environment:
+      NSG_DATABASE_URL: postgresql+psycopg://nsg:${NSG_DB_PASSWORD}@db:5432/nsg
+      NSG_AUTH_SECRET: ${NSG_AUTH_SECRET:?set NSG_AUTH_SECRET in .env}
+      # Default ON here, unlike the dev box: a deployed appliance that quietly
+      # accepts anonymous writes is not a deployment.
+      NSG_AUTH_REQUIRED: ${NSG_AUTH_REQUIRED:-1}
+      NSG_CORS_ORIGINS: ${NSG_CORS_ORIGINS:-http://localhost:3000}
+      # Engine addressing. The pool is a list of LIVE-bridge addresses and each
+      # entry serves ONE run at a time (an instance has fixed /tmp paths that
+      # would cross-contaminate concurrent runs), so more campaign throughput
+      # means more ENTRIES — see the `pool` profile below, not replicas of one.
+      NSG_ENGINE_POOL: ${NSG_ENGINE_POOL:-engine:8091}
+      NSG_NSORAN_LIVE: engine:8091
+      NSG_NSORAN_URL: http://engine:8090
+    # The OpenRouter key stays in the file it already lives in rather than being
+    # copied into the root .env: env_file hands values to the container at run
+    # time, so compose itself never has to read the secret to parse this file.
+    env_file:
+      - ./nsg_ai/.env
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      # /auth/me answers without a token — it reports whether this deployment
+      # enforces auth — so it is a real readiness check, not a guess.
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/auth/me"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        # Baked into the client bundle — see the Dockerfile. Must be reachable
+        # from the BROWSER.
+        NEXT_PUBLIC_API_URL: ${NSG_PUBLIC_API_URL:-http://localhost:8000}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+
+  # ── Extra engine instances (opt-in) ────────────────────────────────────────
+  # `docker compose --profile pool up -d` adds these, and then set
+  #   NSG_ENGINE_POOL=engine:8091,engine2:8091,engine3:8091
+  # in .env. Measured: three instances gave 3.8x campaign throughput at light
+  # load, 2.4x at realistic load. One ns-3 run is single-threaded and saturates
+  # one core, so size the pool by CORES, not by memory.
+  engine2:
+    image: ${NSG_ENGINE_IMAGE:-nsg-engine:1.12}
+    init: true
+    expose: ["8090", "8091"]
+    profiles: ["pool"]
+    restart: unless-stopped
+
+  engine3:
+    image: ${NSG_ENGINE_IMAGE:-nsg-engine:1.12}
+    init: true
+    expose: ["8090", "8091"]
+    profiles: ["pool"]
+    restart: unless-stopped
+
+volumes:
+  nsg-db:

@@ -1,0 +1,18 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# NSG ns-O-RAN engine — runtime BASE image  (nsg-engine-base:20.04)
+#
+# Everything the engine image needs from the network, and nothing else: Ubuntu
+# 20.04, the packages the binaries link against (see Dockerfile for how they
+# were derived) and the `builder` user. Split out of Dockerfile so the engine
+# image can be rebuilt on a machine with no internet: build this once where apt
+# works, carry it over with `docker save`, and Dockerfile builds FROM it without
+# touching the network. build-slim.sh builds it here on first use.
+# ─────────────────────────────────────────────────────────────────────────────
+FROM ubuntu:20.04
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      python3 libsctp1 libsqlite3-0 libstdc++6 procps \
+ && rm -rf /var/lib/apt/lists/*
+
+# ns-3 (./ns3 and the scenario binary refuse to run as root) → a plain user.
+RUN useradd -m builder

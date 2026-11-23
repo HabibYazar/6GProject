@@ -1,0 +1,127 @@
+# NSG Phase 2b — mobility & handover: waypoint paths + 3GPP measurement events.
+#
+# Supersedes the central claim of mro-layer.patch. See the CORRECTION section.
+#
+# ── The finding this phase turns on ─────────────────────────────────────────
+# LteEnbRrc::TriggerUeAssociationUpdate() — the function that decides every
+# automatic mmWave secondary-cell handover — LOST ITS PERIODIC RE-EVALUATION
+# upstream. The self-reschedule at the end of it is commented out with a bare
+# "//Add flag" (ns-O-RAN-flexric, AbdoKhaled27, 2024-12-08), and m_firstReport
+# is only ever reset at cell configuration. Our scenario attaches MC devices
+# with AttachToClosestEnb, so m_interRatHoMode stays false and this is the path
+# it uses — the InterRat twin, UpdateUeHandoverAssociation(), kept its loop.
+#
+# Net effect on every run before this patch: automatic handover was evaluated
+# ONCE, at t~0, and never again. No speed, margin, TTT or simulation length
+# could produce a motion-driven handover, because nothing re-read the
+# measurements. E2/xApp-driven handover went through a different path and kept
+# working, which is why the handovers counter was never zero and the dead loop
+# stayed hidden.
+#
+# ── CORRECTION to mro-layer.patch (2026-07-18 addendum) ─────────────────────
+# That addendum concluded: "MOTION-driven handover churn is unobservable at ANY
+# practical horizon of this engine, batch or live." The measurements behind it
+# were real, but the cause was misattributed to the horizon and to random-walk
+# diffusion. With the evaluation loop restored AND a path that traverses, a
+# 300 s /sim/run reaches ~10 s of sim time and produces real A3 handovers on
+# four of six UEs. The horizon was never the binding constraint; the dead loop
+# was. Diffusion was the second constraint, and waypoints answer it.
+#
+# ── What is wired (end to end) ──────────────────────────────────────────────
+# * mobility.waypoints (schema + UI since day one, NEVER passed to ns-3) ->
+#   ue_waypoints -> NSG_UE_WAYPOINTS -> --ueWaypointsFile -> a per-UE
+#   ns3::WaypointMobilityModel. Format: ';'-sep per UE (aligned with
+#   uePositionsFile), '|'-sep 'x,y,z,t' inside a UE, t = arrival seconds.
+#   An empty slot keeps that UE on RandomWalk2dOutdoor, and an empty spec makes
+#   the run byte-identical to a pre-2b one.
+#   - Every UE in a group flies the SAME path TRANSLATED to its own start
+#     position, so the group stays spread out. One shared absolute path would
+#     pile the group onto a point, which the engine answers with zero DU
+#     metrics or an abort (see nsg-nsoran-ue-placement).
+#   - mobility.waypoint_mode (new): once | repeat | pingpong, default pingpong.
+#     Expanded platform-side to outlast settings.duration_s (cap 200 points).
+#     A path walked once ends long before the run does and silently turns a
+#     mobility test back into a static one.
+#   - Speeds are baked into the waypoint times platform-side; the per-UE
+#     ueSpeedsFile lever is skipped for waypoint UEs (a WaypointMobilityModel
+#     has no "Speed" attribute and SetAttribute on a missing one is fatal).
+# * settings.ho_check_period_ms -> LteEnbRrc::HoCheckPeriodMs. Restores the
+#   loop above at a configurable cadence. Engine attribute default 0 (inherited
+#   single-shot behaviour); PLATFORM schema default 100 ms — a RAN whose
+#   handover logic runs once is a bug, not a baseline, so configs opt out
+#   rather than in. This changes results for every existing scenario.
+# * settings.ho_a3_entry -> LteEnbRrc::HoA3Entry (schema default true).
+#   Requires the 3GPP A3 entry condition Mn > Ms + offset + hysteresis before
+#   a TTT handover is scheduled. Upstream scheduled on ANY better neighbour and
+#   left the TTT to damp it; HoSinrDifference (ho_sinr_margin_db) is the offset.
+# * settings.ho_hysteresis_db -> LteEnbRrc::HoHysteresisDb, added to the offset
+#   in both the TTT path and the THRESHOLD path. Default 0 => unchanged.
+# * settings.ho_a2_threshold_db -> LteEnbRrc::HoA2ThresholdDb. Serving SINR
+#   below it hands over to the best neighbour immediately, bypassing the TTT,
+#   with no A3 margin required. Must sit ABOVE OutageThreshold (-5 dB) to be
+#   reachable — below that the UE falls back to LTE instead of handing over.
+#   Default -1000 = disabled.
+# * Each scheduled handover prints one
+#   "[NSG-HO] t= imsi= from= to= trigger=A3|A2 diff= serving= ttt=" line to the
+#   scenario log, which is what the tests count.
+#
+# ── Honest limits ──────────────────────────────────────────────────────────
+# * A WaypointMobilityModel is NOT buildings-aware: it interpolates straight
+#   through a building the random walk would have gone around. The channel
+#   still computes LOS/NLOS from the real position, so the propagation is
+#   right; the trajectory is not. Fine for a drone, wrong for a car in a block.
+# * Waypoints need per-UE config positions (uePositionsFile). With the engine's
+#   fallback random-disc placement they are ignored, with a log line saying so.
+# * Waypoints are clamped to the engine's 100..3900 m area, so a path that runs
+#   off the edge is clipped rather than rejected.
+# * A reverse leg in pingpong is flown at the speed of the waypoint it starts
+#   from (the schema's speed_mps is "speed to reach THIS waypoint").
+# * The measurement events are computed on SINR, not RSRP/RSRQ — that is the
+#   quantity this engine's secondary-cell handover has always used. A4 and
+#   RSRQ-based reselection are not implemented.
+# * No fidelity_report.py lever: that harness runs on the :8090 batch path,
+#   which reaches ~0.8 s of sim time — 32 m of travel at the 40 m/s ceiling
+#   against ~250 m to a cell boundary. Mobility behaviour is not assertable
+#   there at all, so the harness only gets the plumbing test. The behavioural
+#   proof lives on the /sim/run horizon (test_waypoint_ho_run.py).
+#
+# ── Measured (2026-07-26) ──────────────────────────────────────────────────
+# Geometry: 3 cells in a line 500 m apart, 6 UEs starting 50 m inside the
+# cell-1/cell-2 boundary, driving straight across it at 40 m/s.
+#
+#   SIM HORIZON, measured, per path:
+#     :8090 batch (run_scenario.sh, xApp window 40+15/gNB s wall)  ~0.8-0.9 s
+#     /sim/run  (live bridge, 300 s wall cap)                      ~9.9 s
+#   i.e. ~3.3% of real time for this scenario class (3 gNB / 6 UE / no
+#   buildings / no fast fading) — heavier scenes run slower. /sim/run's
+#   docstring "frames x indicationPeriodicity sim-seconds" is a CEILING, not a
+#   horizon: the run stops at wall_cap_s (900 s) long before 600 frames, so
+#   the reachable horizon is ~30 s of sim time, not 150 s.
+#
+#   LEVER SWEEP, 300 s wall each (engines/nsoran/test_2b_sweep.sh):
+#
+#     variant             horizon   net m   HO       triggers  engine HO
+#     waypoints-loop         9.9s     396   10          A3:10          6
+#     waypoints-noloop       9.5s     380    0              -          0
+#     walk-loop              9.9s     113   45          A3:45         19
+#     hysteresis (+8 dB)     9.1s     364    4           A3:4          4
+#     a2 (5 dB)              9.6s     384   28     A2:26,A3:2          8
+#
+#   * THE LOOP IS THE BLOCKER, cleanly: waypoints-noloop covers the same 380 m
+#     of directed motion across the same boundary and produces ZERO handovers.
+#     Restoring the loop on that identical run gives 10 decisions / 6 handovers.
+#   * Waypoints TRAVERSE: 396 m of net displacement vs 113 m for the random walk
+#     at the same 40 m/s. The walk covers similar PATH length and ends up ~a
+#     third as far away — that is the diffusion mro-layer.patch measured.
+#   * Waypoints are NOT what makes handover possible — the loop is. What they
+#     decide is WHERE the UE goes, and the difference shows up in the KIND of
+#     handover: the walk mills around the boundary and churns 45 ping-pong
+#     decisions / 19 handovers, while the traversing UEs cross once each and
+#     move on (10 / 6). A mobility test wanting clean, attributable handovers
+#     wants waypoints; a ping-pong / MRO-robustness test can use the walk.
+#   * A3 hysteresis is a real damper: +8 dB cuts 10 decisions to 4 on the same
+#     motion, which is the anti-ping-pong knob the TTT alone could not provide.
+#   * A2 fires and is attributable: at a 5 dB serving-cell floor, 26 of 28
+#     decisions carry the A2 trigger and bypass the TTT.
+#   * The restored loop costs no measurable simulation speed at 100 ms
+#     (3.17% of real time with it off, 3.30% with it on — inside the noise).

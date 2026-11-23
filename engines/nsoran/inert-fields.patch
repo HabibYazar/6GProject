@@ -1,0 +1,106 @@
+# NSG — the config fields the UI accepted and the engine ignored.
+#
+# Found by auditing tera5G.conf against BOTH our schema and what actually
+# reaches ns-3 (parity artifact, 2026-07-26). The headline was not that VIAVI
+# has knobs we lack. It was that of our 100 schema fields, ~33 drove the engine
+# and ~21 were rendered, validated, accepted by the AI generator, and then
+# dropped before ns-3 saw them. For a product promising "control every
+# parameter", an inert knob is worse than a missing one — the missing one is
+# honest, and the inert one silently invalidates every measurement taken
+# through it.
+#
+# ── WIRED (each was hardcoded in scenario-zero-with_parallel_loging.cc) ─────
+# * settings.shadowing_enabled -> --shadowingEnabled -> ThreeGppPropagation-
+#   LossModel::ShadowingEnabled. Was `Config::SetDefault(..., false)`
+#   unconditionally, while OUR OWN schema default for the field is TRUE. So
+#   every run ever recorded was shadowing-free while the form said otherwise.
+# * settings.scenario -> --propScenario. Was always
+#   ThreeGppUmiStreetCanyonPropagationLossModel. Now selects the pathloss model
+#   AND the matching channel-condition model together (umi / uma / rma / inh) —
+#   they must move together or the LOS/NLOS probabilities belong to a different
+#   environment than the path loss. Buildings still override the condition
+#   model with real geometry, which is what "UMa-Buildings" means.
+# * settings.random_seed -> --rngRun. The engine ALREADY honoured this
+#   GlobalValue (RngSeedManager::SetRun); the platform simply never sent it.
+#   This is what blocked multi-seed dataset generation.
+# * buildings[].building_type / floors / rooms_x / rooms_y -> fields 8-11 of the
+#   buildings spec. Were hardcoded Office / 1 / 1 / 1. ns-3 counts internal
+#   walls from the room and floor grid, so they are propagation inputs, not
+#   labels. Records with the old 7 fields still parse and keep the old defaults.
+# * band.numerology -> --nsgNumerology. Never passed. This engine's
+#   MmWavePhyMacCommon defines NrNumerology2 and 3 ONLY. First attempt narrowed
+#   the schema to 2-3 and that was WRONG: it 422'd every saved config and the
+#   fidelity harness, which use mu=1. Reverted to 0-6 with a documented CLAMP
+#   into 2-3, matching the platform's existing convention for cell count,
+#   bandwidth and UE speed (engine_envelope.py). Tightening a schema range is a
+#   breaking change for stored scenarios; clamp and say so instead.
+# * settings.report_interval_ms -> --indicationPeriodicity. Was fixed at 0.25 s
+#   (live) / 0.5 s (batch).
+# * massive_mimo.polarization_deg -> 5th field of the antenna spec ->
+#   UniformPlanarArray::PolSlantAngle. Its schema default was changed -45 -> 0:
+#   the UE arrays stay at 0 deg slant, so a gNB slant is a real polarisation
+#   MISMATCH loss, not a free option. Defaulting to -45 would have quietly
+#   taxed every massive-MIMO config.
+#
+# ── RELABELLED, not wired — the engine genuinely cannot express these ───────
+# Marked "FAST/ANALYTICAL TIER ONLY" in their descriptions so the AI generator
+# and the UI stop presenting them as engine levers:
+#   antenna.type, antenna.gain_dbi (gain follows from array size + element),
+#   antenna.horizontal/vertical_beamwidth_deg (ThreeGppAntennaModel exposes NO
+#   attributes — 65/65 is compiled in), massive_mimo.beamforming and
+#   digital_azimuth/tilt_deg (the beamformer already steers at the served UE
+#   every slot; antenna.azimuth_deg/tilt_deg are the real mechanical levers),
+#   settings.fast_fading_enabled (the 3GPP spectrum model always fades),
+#   mobility.pattern (speed_mps + waypoints are the engine levers).
+# settings.duration_s now says plainly that it is a TARGET: runs end on a
+# wall-clock cap at roughly 10 s of sim per 300 s of wall clock.
+#
+# ── Measured (2026-07-26, engines/nsoran/test_inert_fields.py, PASS) ────────
+# 3 cells, 6 UEs, 50 Mbps/UE offered, one variable at a time:
+#
+#   A  UMi, shadowing off, seed 1        6.92 Mbps/UE   trace 3065bf8707
+#   B  + shadowing ON                   17.71  (+156.1%)   trace 3065bf8707
+#   C  RMa instead of UMi               13.75   (+98.8%)   trace 3065bf8707
+#   D  residential bldg, 8 floors 4x3   17.86              trace 3065bf8707
+#   E  seed 4242                         5.70              trace 42c1995703
+#   F  seed 4242 again                   5.70              trace 42c1995703
+#   G  seed 7                            6.12              trace 064fdffbf8
+#
+# * SHADOWING IS NOT COSMETIC: +156% here. Direction depends on the realisation
+#   and geometry — log-normal shadowing is zero-mean in dB but the throughput
+#   mapping is convex, so a short run with 6 UEs can land well above the
+#   no-shadowing case. What matters is the MAGNITUDE: every lever number this
+#   project recorded before today was measured on a shadowing-free channel that
+#   the config claimed was shadowed. Re-measure anything load-bearing.
+# * The propagation environment is worth ~2x throughput between UMi and RMa,
+#   which is the whole point of offering the field.
+# * The seed reproduces EXACTLY — same trace hash and the same throughput to
+#   2 dp (5.70 vs 5.70), and a different seed changes both. Note the trace hash
+#   is identical across A-D: the mobility RNG does not depend on shadowing or
+#   pathloss, which is the sanity check that the hash measures what it claims.
+# * Test design note: run-level means cannot prove reproducibility on their own,
+#   because each run reaches a different sim span in its wall-clock window. The
+#   test hashes the first 20 position samples instead — RNG-driven and
+#   wall-clock independent.
+#
+# ── Two fidelity levers now known to flip-flop, and what was done ──────────
+# Wiring shadowing moved the harness baseline (SINR 8.75 -> 12.4 dB) and made
+# both marginal levers visible:
+# * "2c antenna aimed at sky" read -17.5% before, -2.7% after. REMOVED from the
+#   harness. Panel orientation is real (-59.5% / -70.9% in test_antenna_2c.py);
+#   this baseline's UEs ring five cells at mixed elevations, which dilutes it.
+# * "2a RU deep sleep" read -4.4% (fail), then -5.9% (pass), then -4.4% again
+#   across three consecutive sweeps against a 5% threshold. It is borderline on
+#   this baseline, NOT fixed by the shadowing change — an intermediate reading
+#   was mistaken for a fix. Left in place and left failing rather than tuned
+#   green; it needs a geometry where one idle cell is a larger share of network
+#   power, same treatment the antenna lever just got.
+# A fixed random_seed does NOT collapse this variance: the seed reproduces the
+# SAME config exactly (proven, 5.70 vs 5.70 Mbps/UE), but two DIFFERENT configs
+# draw different numbers of randoms and diverge anyway.
+#
+# ── Consequence to remember ────────────────────────────────────────────────
+# settings.shadowing_enabled defaults to TRUE, so from this commit every
+# platform run has shadowing on. That is the config being honoured for the
+# first time, not a new setting — but it moves every baseline, and the fidelity
+# harness numbers recorded before it are not comparable to the ones after.

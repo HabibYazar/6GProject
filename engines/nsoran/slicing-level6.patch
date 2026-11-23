@@ -1,0 +1,77 @@
+# NSG Level-6: REAL network slicing — per-QCI resource partitioning in the
+# mmWave MAC scheduler, driven by the config and re-partitionable LIVE over
+# E2SM-RC style 2 (Radio Resource Allocation Control).
+#
+# Reference patch (the distro trees are the source of truth; build-slim.sh
+# bakes them). Five files change:
+#
+#   1. src/mmwave/model/mmwave-flex-tti-mac-scheduler.{h,cc}
+#   2. src/mmwave/helper/mmwave-helper.{h,cc}
+#   3. src/lte/model/lte-enb-rrc.cc
+#   4. src/mmwave/model/mmwave-enb-net-device.cc
+#   5. scratch/scenario-zero-with_parallel_loging.cc
+#
+# The chain, and why every link was needed:
+#
+#   config slice (5QI)  ──>  bearer  ──>  MAC LC config  ──>  scheduler quota
+#
+# ── 1. Scheduler: per-QCI DL symbol ceilings ─────────────────────────────────
+# A slice = the QCI of the UE's data bearer. The MAC always forwarded each LC's
+# QCI in CschedLcConfigReq and the scheduler DISCARDED it ("not used at this
+# stage"). Now:
+#   * DoCschedLcConfigReq records rnti -> qci (data bearers, lcid >= 3).
+#   * static std::map<uint8_t,double> m_nsgSliceQuota (qci -> max share 0..1),
+#     network-wide across every cell's scheduler instance; setters
+#     SetNsgSliceQuota()/ClearNsgSliceQuotas(). Empty map = behavior unchanged.
+#   * In DoSchedTriggerReq, AFTER per-UE symbol requests are computed and
+#     BEFORE the fair division loop: each capped slice's total requested DL
+#     symbols is limited to quota*symAvail, granted UE-by-UE greedily from a
+#     start that ROTATES each subframe (proportional floor-scaling handed every
+#     UE 0 symbols when the ceiling was small — total starvation; and a nonzero
+#     quota is floored at 1 symbol). Strict ceiling semantics; HARQ retx are
+#     outside the quota. UL is unsliced (v1).
+#
+# ── 2. Helper: per-IMSI bearer QCI at attach ─────────────────────────────────
+# AttachMcToClosestEnb activated EVERY default bearer as NGBR_VIDEO_TCP_DEFAULT
+# (QCI 9). New static MmWaveHelper::SetNsgImsiQci(map<imsi,qci>) + int->enum
+# mapping; the scenario fills it from the Level-5 slice file BEFORE the attach.
+#
+# ── 3. RRC: carry the QCI across X2 to the mmWave leg ────────────────────────
+# THE HIDDEN BREAK: for MC (dual-connectivity) UEs the mmWave eNB creates the
+# data RLC/LC from a DEFAULT-CONSTRUCTED EpsBearer — the fork had commented out
+# every lcinfo/qci propagation line — so the mmWave MAC saw QCI 9 for everyone
+# no matter what the LTE-side bearer was. Fixed both ends:
+#   * sender (SetupDataRadioBearer path): fill req.lcinfo.{qci,isGbr,mbr,gbr}
+#     from the real bearer in the RlcSetupRequest;
+#   * receiver (UeManager::RecvRlcSetupRequest): rebuild the EpsBearer from
+#     params.lcinfo.qci (guarded 1..9) instead of default-constructing it.
+#
+# ── 4. gNB: E2SM-RC style 2 handler ──────────────────────────────────────────
+# Radio_Resource_Allocation_Control used to log "Unsupported RIC Style Type".
+# Now: (QCI, ceiling%) ride in the RIC control action id as (qci << 8) | pct
+# (id is ASN.1-constrained 1..65535; qci >= 1 keeps it >= 256), and the handler
+# schedules MmWaveFlexTtiMacScheduler::SetNsgSliceQuota on the sim thread. One
+# control message re-partitions every cell from the next subframe.
+#
+# ── 5. Scenario: config-driven initial state ─────────────────────────────────
+#   * Level-5 slice parse MOVED BEFORE the attach; builds imsi->qci (imsi =
+#     UE index + 1) and calls MmWaveHelper::SetNsgImsiQci.
+#   * new GlobalValue sliceQuotasFile ("qci:pct;..."): initial ceilings ->
+#     SetNsgSliceQuota at startup (NSG_SLICE_QUOTAS env via run_scenario.sh /
+#     run_live_session.sh --sliceQuotasFile).
+#
+# ── xApp bridge (full file in repo: xapp_kpm_rc.c) ───────────────────────────
+#   * nsg_gen_slice_ctrl_msg(qci,pct): style 2, act_id=(qci<<8)|pct, one filler
+#     RAN param (the gNB reads only the header) so the message PER-encodes.
+#   * nsg_send_slice_control: one send to any RC node suffices (global map).
+#   * FIFO cmd: {"cmd":"slice_quota","qci":9,"pct":30}.
+#
+# ── VERIFIED on the real engine (2026-07-16) ─────────────────────────────────
+# Batch differential (2 slices x 5 UEs, both saturating, 5 gNB / 50 MHz):
+#   baseline            qci9 10.76 / qci7 12.65 Mbps/UE   ratio 0.85x
+#   quota 9:60% 7:10%   qci9 10.64 / qci7  6.69           ratio 1.59x
+#   quota 9:10% 7:60%   qci9  4.95 / qci7 13.12           ratio 0.38x
+# Live E2 control mid-run: bridge "slice control sent (style 2)" -> gNB
+# "[NSG] E2 slice control: qci 9 ceiling 5%" -> scheduler "[NSG] slice quota:
+# qci 9 capped at 5% of DL symbols", KPM kept streaming.
+# Engine-level tests: test_slice.sh (+ parse_slice.py), test_live_slice.py.

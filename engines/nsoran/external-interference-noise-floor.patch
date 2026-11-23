@@ -1,0 +1,55 @@
+diff --git a/src/mmwave/model/mmwave-ue-phy.cc b/src/mmwave/model/mmwave-ue-phy.cc
+index c4a9a17b..605d480c 100644
+--- a/src/mmwave/model/mmwave-ue-phy.cc
++++ b/src/mmwave/model/mmwave-ue-phy.cc
+@@ -47,6 +47,7 @@
+ 
+ #include <cfloat>
+ #include <cmath>
++#include <cstdlib>
+ 
+ namespace ns3
+ {
+@@ -371,6 +372,42 @@ MmWaveUePhy::RegisterToEnb(uint16_t cellId, Ptr<MmWavePhyMacCommon> config)
+     m_downlinkSpectrumPhy->ResetSpectrumModel();
+     Ptr<SpectrumValue> noisePsd =
+         MmWaveSpectrumValueHelper::CreateNoisePowerSpectralDensity(m_phyMacConfig, m_noiseFigure);
++
++    // ===== NSG: interference from cells this PROCESS cannot see =====
++    // Partitioning a network across processes (one per cell) is the only speed
++    // lever with real headroom, but a partition loses the other partitions'
++    // interference and that is not a rounding error: measured 2026-09-18 at 3
++    // cells / 12 UEs, splitting three ways inflated throughput 1.61x and took
++    // BLER from 7.74% to 0.00% — the error mechanism disappears entirely.
++    //
++    // Interference already sits in the SINR denominator beside the noise
++    // (mmwave-interference.cc: allSignals - rxSignal + noise), so a cell that is
++    // absent from this process is restored by RAISING THE NOISE FLOOR by the
++    // power it would have delivered. No new API, no change to mmWaveInterference.
++    //
++    // NSG_EXT_INTERF_DBM is the total external interference power in dBm over the
++    // whole carrier, spread flat across the RBs. Stage 1 is deliberately uniform
++    // and static: it answers "does restoring the power restore BLER" before any
++    // geometry is written. Stage 2 makes it per-UE from neighbour positions, and
++    // stage 3 scales it by the neighbours' measured load.
++    if (const char* extDbm = std::getenv("NSG_EXT_INTERF_DBM"))
++    {
++        const double totalW = std::pow(10.0, std::atof(extDbm) / 10.0) / 1000.0;
++        const uint32_t nRb = noisePsd->GetSpectrumModel()->GetNumBands();
++        if (nRb > 0 && totalW > 0.0)
++        {
++            // CreateNoisePowerSpectralDensity returns a DENSITY (W/Hz), so the
++            // per-band power has to be divided by that band's width, not just by
++            // the band count — otherwise the floor lands orders of magnitude off.
++            auto bit = noisePsd->ConstBandsBegin();
++            for (auto vit = noisePsd->ValuesBegin(); vit != noisePsd->ValuesEnd(); ++vit, ++bit)
++            {
++                const double bw = bit->fh - bit->fl;
++                if (bw > 0.0) *vit += (totalW / nRb) / bw;
++            }
++        }
++    }
++
+     m_downlinkSpectrumPhy->SetNoisePowerSpectralDensity(noisePsd);
+     m_downlinkSpectrumPhy->GetSpectrumChannel()->AddRx(m_downlinkSpectrumPhy);
+     m_downlinkSpectrumPhy->SetCellId(m_cellId);

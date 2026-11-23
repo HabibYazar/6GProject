@@ -1,0 +1,152 @@
+# ns-O-RAN mmWave: two UEs could end up sharing one RNTI on one cell.
+#
+# Symptom: `NS_ASSERT failed, cond="Sum((*rxPsd) * (*m_rxSignal)) == 0.0"` in
+# mmwave-interference.cc:108, on a gNB node, in any 2 gNB / >=2 UE-per-cell run
+# with uplink and HARQ on. `sched_direction: dl_only` or `harq_enabled: false`
+# hid it; the MAC scheduler was innocent (30k grants, zero symbol overlaps).
+#
+# Cause, measured with MmWaveUePhy/MmWaveUeMac logs on the failing config:
+#   * MmWaveEnbMac builds the RAR without ever calling SetRaRnti, so the UE's
+#     RA-RNTI check is dead -- it logs the mismatch and proceeds.
+#   * MmWaveUeMac therefore matches a RAR on the preamble id ALONE, guarded only
+#     by m_waitingForRaResponse -- which is initialised true and is never
+#     cleared on failure, so a UE whose RA got no RAR listens forever.
+#   * MmWaveEnbMac::DoAllocateNcRaPreamble frees the non-contention preamble the
+#     instant the RAR is built, so EVERY handover reuses the first id (50 here).
+#   Together: the next handover's RAR is accepted by BOTH the UE it was meant
+#   for and a stale waiter. Both take the same RNTI, both answer the same UL
+#   grant, and the gNB receives two non-orthogonal wanted signals.
+#
+# Evidence (2 gNB / 4 UE, seed as saved):
+#   +2.393267856s 0x..f7e760 got RAR with RA-RNTI 8992, expecting 8 -> T-C-RNTI 4
+#   +2.393267856s 0x..0b7a50 got RAR with RA-RNTI 8992, expecting 1 -> T-C-RNTI 4
+#   +2.393660713s UE4 imsi1 TXing UL DATA ... symbols 9-12
+#   +2.393660713s UE4 imsi4 TXing UL DATA ... symbols 9-12
+#   +2.393660714s NS_ASSERT failed ... node 4 (= second gNB)
+#
+# Fix: bound the UE's RA response window (new attribute RaResponseWindow,
+# default 10 ms -- the RAR arrives ~0.8 ms after the preamble), start UEs not
+# waiting, and hold the non-contention preamble for one response window instead
+# of freeing it immediately, so overlapping handovers get distinct preambles.
+#
+# Apply in the engine distro:
+#   cd /home/builder/ns-O-RAN-flexric/mmwave-LENA-oran && patch -p1 < this
+#   runuser -u builder -- ./ns3 build scenario-zero-with_parallel_loging
+--- a/src/mmwave/model/mmwave-ue-mac.h
++++ b/src/mmwave/model/mmwave-ue-mac.h
+@@ -117,6 +117,8 @@
+ 
+     void RandomlySelectAndSendRaPreamble();
+     void SendRaPreamble(bool contention);
++    // NSG: closes the random-access response window (see mmwave-ue-mac.cc).
++    void RaResponseTimeout(void);
+     void SendReportBufferStatus(void);
+     void RefreshHarqProcessesPacketBuffer(void);
+ 
+@@ -176,6 +178,9 @@
+     uint16_t m_rnti;
+ 
+     bool m_waitingForRaResponse;
++    // NSG: bounds how long this UE answers RARs after sending a preamble.
++    EventId m_noRaResponseReceivedEvent;
++    Time m_raResponseWindow;
+     static uint8_t g_raPreambleId;
+     Ptr<UniformRandomVariable> m_randomAccessProcedureDelay;
+     double m_ueUpdateSinrPeriod;
+--- a/src/mmwave/model/mmwave-ue-mac.cc
++++ b/src/mmwave/model/mmwave-ue-mac.cc
+@@ -233,6 +233,15 @@
+                           BooleanValue(false),
+                           MakeBooleanAccessor(&MmWaveUeMac::m_interRatHoCapable),
+                           MakeBooleanChecker())
++            .AddAttribute("RaResponseWindow",
++                          "How long this UE keeps answering random access responses after "
++                          "it sent a preamble. The RAR carries no usable RA-RNTI here, so "
++                          "the preamble id is the only thing that binds a RAR to a UE; "
++                          "without this bound a UE whose RA never got a RAR listens "
++                          "forever and adopts the next UE's RNTI.",
++                          TimeValue(MilliSeconds(10)),
++                          MakeTimeAccessor(&MmWaveUeMac::m_raResponseWindow),
++                          MakeTimeChecker())
+             .AddTraceSource("TxMacPacketTraceUe",
+                             "Packets transmitted by UeMac",
+                             MakeTraceSourceAccessor(&MmWaveUeMac::m_txMacPacketTraceUe),
+@@ -250,7 +259,9 @@
+       m_freshUlBsr(false),
+       m_raPreambleId(0),
+       m_rnti(0),
+-      m_waitingForRaResponse(true)
++      // NSG: a UE that has not sent a preamble has no business answering a
++      // RAR. Starting life "waiting" let an idle UE take someone else's RNTI.
++      m_waitingForRaResponse(false)
+ {
+     NS_LOG_FUNCTION(this);
+     m_cmacSapProvider = new UeMemberMmWaveUeCmacSapProvider(this);
+@@ -621,7 +632,7 @@
+ {
+     NS_LOG_FUNCTION(this);
+     m_waitingForRaResponse = false;
+-    // m_noRaResponseReceivedEvent.Cancel ();
++    m_noRaResponseReceivedEvent.Cancel();
+     NS_LOG_INFO("got RAR for RAPID " << (uint32_t)m_raPreambleId
+                                      << ", setting T-C-RNTI = " << raResponse.m_rnti);
+     m_rnti = raResponse.m_rnti;
+@@ -1058,12 +1069,30 @@
+     /*raRnti should be subframeNo -1 */
+     m_raRnti = m_sfNum - 1;
+     m_waitingForRaResponse = true;
++    // NSG: stop answering RARs once the response window closes. The eNB never
++    // sets the RAR's RA-RNTI, so a UE matches a RAR on the preamble id alone --
++    // and the eNB hands the same non-contention preamble to every handover.
++    // A UE left waiting forever therefore answers the NEXT handover's RAR and
++    // takes that UE's RNTI; two UEs then share one RNTI on one cell and answer
++    // the same UL grant, which trips the PHY orthogonality assert.
++    m_noRaResponseReceivedEvent.Cancel();
++    m_noRaResponseReceivedEvent =
++        Simulator::Schedule(m_raResponseWindow, &MmWaveUeMac::RaResponseTimeout, this);
+ 
+     NS_LOG_DEBUG("SendRachPreamble at time " << Simulator::Now());
+     m_phySapProvider->SendRachPreamble(m_raPreambleId, m_raRnti);
+ }
+ 
+ void
++MmWaveUeMac::RaResponseTimeout(void)
++{
++    NS_LOG_FUNCTION(this);
++    NS_LOG_INFO("no RAR within the response window for preamble "
++                << (uint32_t)m_raPreambleId << "; stop answering RARs");
++    m_waitingForRaResponse = false;
++}
++
++void
+ MmWaveUeMac::DoStartNonContentionBasedRandomAccessProcedure(uint16_t rnti,
+                                                             uint8_t preambleId,
+                                                             uint8_t prachMask)
+@@ -1142,7 +1171,8 @@
+     }
+     m_rnti = 0;
+ 
+-    // m_noRaResponseReceivedEvent.Cancel ();
++    m_noRaResponseReceivedEvent.Cancel();
++    m_waitingForRaResponse = false;
+     // m_rachConfigured = false;
+     m_miUlHarqProcessesPacket.clear();
+     m_miUlHarqProcessesPacketTimer.clear();
+--- a/src/mmwave/model/mmwave-enb-mac.cc
++++ b/src/mmwave/model/mmwave-enb-mac.cc
+@@ -505,7 +505,14 @@
+                 rnti = jt->second.rnti;
+                 NS_LOG_INFO("preambleId previously allocated for NC based RA, RNTI ="
+                             << (uint32_t)rnti << ", sending RAR");
+-                m_allocatedNcRaPreambleMap.erase(jt);
++                // NSG: do NOT free the preamble the instant its RAR is built.
++                // Erasing it here makes DoAllocateNcRaPreamble hand the FIRST id
++                // of the non-contention range to every subsequent handover, so two
++                // UEs in overlapping RA windows match the same RAR and end up
++                // sharing one RNTI. Hold it for one response window instead; it
++                // then expires on its own, so the pool is not exhausted.
++                jt->second.expiryTime =
++                    Simulator::Now() + MilliSeconds(m_raResponseWindowSize + 5);
+             }
+             else
+             {

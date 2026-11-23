@@ -1,0 +1,57 @@
+# ns-O-RAN mmWave: the LOS/NLOS condition re-draw period was hardcoded.
+#
+# `ThreeGppChannelConditionModel::UpdatePeriod` was set to 100 ms by a
+# Config::SetDefault that runs AFTER cmd.Parse, so a command-line override was
+# silently overwritten — the same trap the file already warns about for two
+# other attributes. This exposes it as the GlobalValue `channelCondUpdateMs`,
+# mirroring the existing `channelUpdateMs`, and keeps 100 ms as the default so
+# nothing changes unless it is asked for.
+#
+# Why it matters: the condition re-draw is what forces the 3GPP channel matrix
+# to regenerate. Relaxing `ThreeGppChannelModel::UpdatePeriod` alone buys
+# NOTHING (measured 2026-09-12: 100 ms -> 10000 ms, zero speedup) because a
+# condition flip invalidates the matrix regardless. Measured with this knob,
+# 3 gNB / 30 UE, wall seconds to reach 1 simulated second:
+#
+#     100 ms  -> 27.6 s
+#    1000 ms  -> 27.3 s
+#   10000 ms  -> 25.0 s   (~10%)
+#
+# So it is a modest lever, not a breakthrough — but it was invisible before and
+# the hardcoded value is now a decision rather than an accident.
+#
+# Apply in the engine distro:
+#   cd /home/builder/ns-O-RAN-flexric/mmwave-LENA-oran && patch -p1 < this
+#   runuser -u builder -- ./ns3 build scenario-zero-with_parallel_loging
+--- a/scratch/scenario-zero-with_parallel_loging.cc
++++ b/scratch/scenario-zero-with_parallel_loging.cc
+@@ -582,6 +582,13 @@
+                                            "3GPP channel matrix regeneration period (ms)",
+                                            ns3::DoubleValue (100.0),
+                                            ns3::MakeDoubleChecker<double> (1.0, 10000.0));
++// NSG: the LOS/NLOS condition was re-drawn every 100 ms, hardcoded. That re-draw
++// is what forces the 3GPP channel matrix to be regenerated -- relaxing
++// ThreeGppChannelModel::UpdatePeriod alone changes nothing, measured.
++static ns3::GlobalValue channel_cond_update_ms ("channelCondUpdateMs",
++                                           "3GPP LOS/NLOS condition re-draw period (ms)",
++                                           ns3::DoubleValue (100.0),
++                                           ns3::MakeDoubleChecker<double> (1.0, 100000.0));
+ static ns3::GlobalValue harq_enabled ("harqEnabled",
+                                       "Enable HARQ retransmissions (default true)",
+                                       ns3::BooleanValue (true),
+@@ -1430,8 +1437,13 @@
+                             TimeValue (MilliSeconds (nsgChUpd.Get ())));
+         NS_LOG_UNCOND ("[NSG] channel update period " << nsgChUpd.Get () << " ms");
+     }
+-    Config::SetDefault ("ns3::ThreeGppChannelConditionModel::UpdatePeriod",
+-    TimeValue (MilliSeconds (100)));
++    {
++        DoubleValue nsgCondUpd;
++        GlobalValue::GetValueByName ("channelCondUpdateMs", nsgCondUpd);
++        Config::SetDefault ("ns3::ThreeGppChannelConditionModel::UpdatePeriod",
++                            TimeValue (MilliSeconds (nsgCondUpd.Get ())));
++        NS_LOG_UNCOND ("[NSG] channel condition update period " << nsgCondUpd.Get () << " ms");
++    }
+ 
+     Config::SetDefault("ns3::LteRlcAm::ReportBufferStatusTimer", TimeValue(MilliSeconds(10.0)));
+     Config::SetDefault("ns3::LteRlcUmLowLat::ReportBufferStatusTimer",

@@ -1,0 +1,36 @@
+--- a/contrib/oran-interface/model/kpm-indication.cc	2026-09-10 19:32:59.487748411 +0300
++++ b/contrib/oran-interface/model/kpm-indication.cc	2026-09-10 19:32:59.586748398 +0300
+@@ -1018,6 +1018,33 @@
+       MeasurementInfoItem_t *infoItem = _pairInfo.first;
+       MeasurementDataItem_t *measureDataItem = _pairInfo.second;
+ 
++      // NSG: never ship a measurement with nothing in it. E2SM-KPM requires a
++      // measRecord of at least one item, and FlexRIC enforces it with an
++      // assert() in kpm_dec_meas_data_asn (dec_meas_data.c:20) - so an empty
++      // record does not degrade the report, it ABORTS THE RIC. ns-3 then keeps
++      // encoding indications into a closed SCTP socket (Connection closed by
++      // remote peer, then Socket operation on non-socket) and the run produces
++      // nothing while looking alive. That is the whole of the 2-cell failure
++      // this engine has been carrying: measured, 2 gNB + 1 UE dies this way
++      // while 3 gNB + 1 UE completes normally.
++      //
++      // Two ways an empty one is produced upstream, both reachable here:
++      //   * getMesInfoItem leaves measureDataItem null for every branch it does
++      //     not handle (NOTHING / noValue / an unrecognised measName / an RRC
++      //     list that came back empty) and the null was added regardless;
++      //   * the neighbour builder skips each entry whose physCellId is negative
++      //     - those exist only to register the NAME - so a list that is all
++      //     negative registers a name and adds no record at all.
++      //
++      // The name is dropped WITH the data item, never on its own: the xApp
++      // pairs measInfoList[i] with measRecord[i], so dropping one side alone is
++      // the same off-by-one that made DRB.EstabSucc.5QI read negative.
++      if (measureDataItem == nullptr || measureDataItem->measRecord.list.count < 1)
++        {
++          NS_LOG_INFO ("NSG: dropping a measurement with no record");
++          continue;
++        }
++
+       ASN_SEQUENCE_ADD (&measurementDataList->list, measureDataItem);
+       ASN_SEQUENCE_ADD (&infoList->list, infoItem);
+     }

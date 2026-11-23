@@ -1,0 +1,31 @@
+--- a/src/mmwave/helper/mmwave-bearer-stats-connector.cc	2026-09-10 19:48:04.871360412 +0300
++++ b/src/mmwave/helper/mmwave-bearer-stats-connector.cc	2026-09-10 19:48:04.904360398 +0300
+@@ -731,7 +731,27 @@
+     key.cellId = cellId;
+     key.rnti = rnti;
+     std::map<CellIdRnti, std::string>::iterator it = m_ueManagerPathByCellIdRnti.find(key);
+-    NS_ASSERT(it != m_ueManagerPathByCellIdRnti.end());
++    // NSG: this map is a ONE-SHOT handoff - StoreUeManagerPath writes an entry
++    // per (cellId, rnti) and this function consumes and erases it. A miss is
++    // therefore not an impossible state: RNTIs are per-cell and recycled, so a
++    // reused (cellId, rnti) whose earlier entry was already consumed lands here
++    // with nothing to find. Aborting the whole simulation for it costs far more
++    // than it protects - measured 2026-09-10, deterministically at
++    // t=2.393267856s: 2 cells with 4 UEs (two handovers) died here at 23 of 30
++    // windows, while the same scenario at 1 or 3 cells completed. Everything
++    // else in this file already uses Config::ConnectFailSafe, i.e. it accepts
++    // that a trace source may not be there.
++    //
++    // What is lost by returning instead: the SRB0 RLC trace reconnection for
++    // that one UE-cell association, so its RLC-level stats may be short a
++    // sample. Our KPM path reports over E2, not from these trace files, and a
++    // missing sample beats no run at all.
++    if (it == m_ueManagerPathByCellIdRnti.end())
++    {
++        NS_LOG_WARN("NSG: no stored UE manager path for cellId "
++                    << cellId << " rnti " << rnti << " - skipping SRB0 reconnect");
++        return;
++    }
+     std::string ueManagerPath = it->second;
+     NS_LOG_LOGIC(this << " ueManagerPath: " << ueManagerPath);
+     m_ueManagerPathByCellIdRnti.erase(it);

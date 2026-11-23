@@ -1,0 +1,200 @@
+{
+ "ue_tx": {
+  "20": {
+   "status": "done",
+   "wall": 204.8,
+   "frames": 30,
+   "DRB.PdcpSduVolumeUl": 2934.0,
+   "DRB.PdcpSduBitRateUl": 2934.0,
+   "QosFlow.PdcpPduVolumeDL": 6262153.0,
+   "TB.TotNbrDl.1": 4149.0,
+   "_dl_bytes_per_block": 1509.3162207760906
+  },
+  "30": {
+   "status": "done",
+   "wall": 278.3,
+   "frames": 30,
+   "DRB.PdcpSduVolumeUl": 1950.0,
+   "DRB.PdcpSduBitRateUl": 1950.0,
+   "QosFlow.PdcpPduVolumeDL": 5694297.0,
+   "TB.TotNbrDl.1": 3998.0,
+   "_dl_bytes_per_block": 1424.2863931965983
+  },
+  "40": {
+   "status": "done",
+   "wall": 290.5,
+   "frames": 30,
+   "DRB.PdcpSduVolumeUl": 2596.0,
+   "DRB.PdcpSduBitRateUl": 2596.0,
+   "QosFlow.PdcpPduVolumeDL": 3389745.0,
+   "TB.TotNbrDl.1": 3974.0,
+   "_dl_bytes_per_block": 852.9806240563664
+  }
+ },
+ "load": {
+  "0.01": {
+   "status": "done",
+   "wall": 143.4,
+   "frames": 30,
+   "offered_ul_kbit": 2500.0,
+   "DRB.PdcpSduVolumeUl": 1796.0,
+   "DRB.PdcpSduBitRateUl": 1796.0,
+   "QosFlow.PdcpPduVolumeDL": 1267811.0,
+   "TB.TotNbrDl.1": 1100.0,
+   "RRU.PrbUsedDl": 6.0,
+   "_dl_bytes_per_block": 1152.5554545454545
+  },
+  "0.05": {
+   "status": "done",
+   "wall": 281.4,
+   "frames": 30,
+   "offered_ul_kbit": 12500.000000000002,
+   "DRB.PdcpSduVolumeUl": 1944.5,
+   "DRB.PdcpSduBitRateUl": 1944.5,
+   "QosFlow.PdcpPduVolumeDL": 5694297.0,
+   "TB.TotNbrDl.1": 3998.0,
+   "RRU.PrbUsedDl": 27.0,
+   "_dl_bytes_per_block": 1424.2863931965983
+  },
+  "0.2": {
+   "status": "done",
+   "wall": 283.5,
+   "frames": 30,
+   "offered_ul_kbit": 50000.00000000001,
+   "DRB.PdcpSduVolumeUl": 1916.0,
+   "DRB.PdcpSduBitRateUl": 1916.0,
+   "QosFlow.PdcpPduVolumeDL": 5699064.0,
+   "TB.TotNbrDl.1": 3998.0,
+   "RRU.PrbUsedDl": 27.0,
+   "_dl_bytes_per_block": 1425.478739369685
+  }
+ },
+ "ues": {
+  "12": {
+   "status": "done",
+   "wall": 67.3,
+   "frames": 30,
+   "offered_ul_kbit": 12500.000000000002,
+   "DRB.PdcpSduVolumeUl": 7899.0,
+   "DRB.PdcpSduBitRateUl": 7899.0,
+   "QosFlow.PdcpPduVolumeDL": 4417354.0,
+   "TB.TotNbrDl.1": 3199.0,
+   "RRU.PrbUsedDl": 18.0,
+   "_dl_bytes_per_block": 1380.8546420756486
+  },
+  "36": {
+   "status": "done",
+   "wall": 219.5,
+   "frames": 30,
+   "offered_ul_kbit": 12500.000000000002,
+   "DRB.PdcpSduVolumeUl": 1916.0,
+   "DRB.PdcpSduBitRateUl": 1916.0,
+   "QosFlow.PdcpPduVolumeDL": 5699064.0,
+   "TB.TotNbrDl.1": 3998.0,
+   "RRU.PrbUsedDl": 27.0,
+   "_dl_bytes_per_block": 1425.478739369685
+  }
+ },
+ "srs": {
+  "80": {
+   "status": "done",
+   "wall": 227.7,
+   "frames": 30,
+   "offered_ul_kbit": 12500.000000000002,
+   "DRB.PdcpSduVolumeUl": 1961.5,
+   "DRB.PdcpSduBitRateUl": 1961.5,
+   "QosFlow.PdcpPduVolumeDL": 5694825.0,
+   "TB.TotNbrDl.1": 3999.0,
+   "RRU.PrbUsedDl": 27.0,
+   "_dl_bytes_per_block": 1424.0622655663915
+  },
+  "320": {
+   "status": "done",
+   "wall": 281.6,
+   "frames": 30,
+   "offered_ul_kbit": 12500.000000000002,
+   "DRB.PdcpSduVolumeUl": 1933.0,
+   "DRB.PdcpSduBitRateUl": 1933.0,
+   "QosFlow.PdcpPduVolumeDL": 5696415.0,
+   "TB.TotNbrDl.1": 3998.0,
+   "RRU.PrbUsedDl": 27.0,
+   "_dl_bytes_per_block": 1424.8161580790395
+  }
+ },
+ "symperslot": {
+  "2": {
+   "status": "done",
+   "wall": 186.4,
+   "frames": 30,
+   "offered_ul_kbit": 12500.000000000002,
+   "DRB.PdcpSduVolumeUl": 2007.5,
+   "DRB.PdcpSduBitRateUl": 2007.5,
+   "QosFlow.PdcpPduVolumeDL": 5686352.0,
+   "TB.TotNbrDl.1": 3999.0,
+   "RRU.PrbUsedDl": 27.0,
+   "_dl_bytes_per_block": 1421.9434858714678
+  },
+  "6": {
+   "status": "done",
+   "wall": 234.6,
+   "frames": 30,
+   "offered_ul_kbit": 12500.000000000002,
+   "DRB.PdcpSduVolumeUl": 2007.5,
+   "DRB.PdcpSduBitRateUl": 2007.5,
+   "QosFlow.PdcpPduVolumeDL": 5686352.0,
+   "TB.TotNbrDl.1": 3999.0,
+   "RRU.PrbUsedDl": 27.0,
+   "_dl_bytes_per_block": 1421.9434858714678
+  },
+  "14": {
+   "status": "done",
+   "wall": 240.3,
+   "frames": 30,
+   "offered_ul_kbit": 12500.000000000002,
+   "DRB.PdcpSduVolumeUl": 2036.0,
+   "DRB.PdcpSduBitRateUl": 2036.0,
+   "QosFlow.PdcpPduVolumeDL": 5682119.0,
+   "TB.TotNbrDl.1": 3999.0,
+   "RRU.PrbUsedDl": 27.0,
+   "_dl_bytes_per_block": 1420.8849712428107
+  }
+ },
+ "mcs_ul": {
+  "4": {
+   "status": "done",
+   "wall": 186.5,
+   "frames": 30,
+   "offered_ul_kbit": 12500.000000000002,
+   "DRB.PdcpSduVolumeUl": 720.0,
+   "DRB.PdcpSduBitRateUl": 720.0,
+   "QosFlow.PdcpPduVolumeDL": 3428425.0,
+   "TB.TotNbrDl.1": 3825.0,
+   "RRU.PrbUsedDl": 17.0,
+   "_dl_bytes_per_block": 896.3202614379085
+  },
+  "12": {
+   "status": "done",
+   "wall": 234.0,
+   "frames": 30,
+   "offered_ul_kbit": 12500.000000000002,
+   "DRB.PdcpSduVolumeUl": 994.5,
+   "DRB.PdcpSduBitRateUl": 994.5,
+   "QosFlow.PdcpPduVolumeDL": 3579964.0,
+   "TB.TotNbrDl.1": 4090.0,
+   "RRU.PrbUsedDl": 14.0,
+   "_dl_bytes_per_block": 875.2968215158925
+  },
+  "24": {
+   "status": "done",
+   "wall": 242.3,
+   "frames": 30,
+   "offered_ul_kbit": 12500.000000000002,
+   "DRB.PdcpSduVolumeUl": 5148.0,
+   "DRB.PdcpSduBitRateUl": 5148.0,
+   "QosFlow.PdcpPduVolumeDL": 4826045.0,
+   "TB.TotNbrDl.1": 3999.0,
+   "RRU.PrbUsedDl": 23.0,
+   "_dl_bytes_per_block": 1206.8129532383095
+  }
+ }
+}

@@ -1,0 +1,37 @@
+# NSG multi-service per UE — a group's services list is now REAL traffic.
+#
+# Reference note (distro trees are the source of truth; build-slim.sh bakes
+# them). Config gap #2 from docs/engine-veri-ve-config-durumu.md.
+#
+# ── What changed ─────────────────────────────────────────────────────────────
+# Before: a UE group's services[] were COLLAPSED into one stream — rates
+# summed, first 5QI, first call model. "A car carrying voice + data" was
+# unrepresentable.
+# Now: each service (max 3/UE) is its OWN stream with its own rate and its own
+# call model, DL + UL (25%), CBR or Poisson on/off per service.
+#
+# * Backend (_ue_slice_specs, main.py): per-UE slot holds '|'-joined service
+#   specs "qci,rate[,on,off]"; per-service rate clamp + proportional scale-down
+#   if the UE total exceeds the engine envelope; old single-service strings
+#   stay valid. AI config prompt teaches it (llm_agent.py).
+# * Scenario: slot parse splits '|'; one DL + one UL stream per service; the
+#   legacy no-spec default (3.2 Mbps) is preserved.
+#
+# ── Honest limits ────────────────────────────────────────────────────────────
+# 1. All of a UE's streams ride ONE bearer whose QCI = the FIRST service's.
+#    A second DEDICATED bearer was probed (2026-07-17): the bearer chain works
+#    down to the MAC (scheduler learned "lcid 4 qci 1") but the sim segfaults
+#    at ~t=0.1 — suspect a null m_rlc deref for MC bearers in a report path.
+#    Root-causing needs a gdb session; note left in the scenario source.
+# 2. Even with bearers, the MAC scheduler treats a UE's LCs as a single flow,
+#    so slicing granularity is per-UE (per-LC slicing = scheduler surgery).
+# 3. DRB.PdcpSduVolumeDl is a dead metric for MC UEs (DL PDCP lives at the LTE
+#    anchor's McEnbPdcp; the mmWave device's calculator never sees DL Tx) —
+#    use QosFlow.PdcpPduVolumeDL (windowed RLC bytes) for DL volume instead.
+#
+# ── VERIFIED on the real engine (2026-07-17) ─────────────────────────────────
+# 10 UEs, "9,8.00" vs "9,8.00|1,6.00": 10 -> 20 installed streams, zero
+# crashes, windowed DL volume ratio 2.22x (offered 1.75x — window variance,
+# decisively up). DRB.UEThpDl is an ACTIVE-TIME rate and barely moves with
+# added volume — wrong instrument for load tests, learned the hard way.
+# Engine test: engines/nsoran/test_multiservice.py. Fidelity harness 9/9 after.

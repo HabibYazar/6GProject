@@ -1,0 +1,472 @@
+{
+ "area": {
+  "x_min": -300.0,
+  "x_max": 1200.0,
+  "y_min": -300.0,
+  "y_max": 800.0,
+  "resolution_m": 25.0
+ },
+ "name": "2g4u both",
+ "slices": [],
+ "settings": {
+  "ue_n310": 2,
+  "scenario": "UMa-Buildings",
+  "amc_model": "error_model",
+  "fixed_tti": false,
+  "ho_ttt_ms": 110,
+  "duration_s": 180,
+  "error_model": "lte_mi",
+  "ho_a3_entry": true,
+  "random_seed": null,
+  "rrc_t300_ms": 100,
+  "x2_link_mtu": 10000,
+  "fixed_mcs_dl": null,
+  "fixed_mcs_ul": null,
+  "harq_enabled": true,
+  "ra_preambles": 50,
+  "s1u_link_mtu": 2000,
+  "sym_per_slot": 6,
+  "x2_link_gbps": 100.0,
+  "handover_mode": "DynamicTtt",
+  "kpm_report_du": true,
+  "o2i_threshold": 0.0,
+  "portrait_mode": true,
+  "rlc_buffer_mb": 10,
+  "s1u_link_gbps": 10.0,
+  "sleep_power_a": null,
+  "svd_tolerance": 1e-08,
+  "svd_use_cache": true,
+  "use_ideal_rrc": true,
+  "amc_target_ber": 1e-05,
+  "harq_processes": 100,
+  "rlc_am_enabled": false,
+  "s1ap_link_gbps": 10.0,
+  "antenna_element": "isotropic",
+  "harq_dl_timeout": 20,
+  "ru_rx_current_a": null,
+  "ru_tx_current_a": null,
+  "sched_direction": "both",
+  "srs_periodicity": 320,
+  "ue_tx_power_dbm": 30.0,
+  "blockage_enabled": false,
+  "gnb_transient_ns": 320000,
+  "ho_hysteresis_db": 0.0,
+  "kpm_report_cu_cp": true,
+  "kpm_report_cu_up": true,
+  "q_rx_lev_min_dbm": -140,
+  "x2_link_delay_ms": 1.0,
+  "beamforming_model": "svd",
+  "blocker_speed_mps": 1.0,
+  "channel_update_ms": 100.0,
+  "ho_dyn_ttt_max_ms": 150,
+  "ho_dyn_ttt_min_ms": 25,
+  "ho_sinr_margin_db": 3.0,
+  "ru_idle_current_a": null,
+  "s1u_link_delay_ms": 1.0,
+  "shadowing_enabled": true,
+  "use_pdsch_for_cqi": false,
+  "ho_a2_threshold_db": null,
+  "ho_check_period_ms": 100,
+  "ho_dyn_diff_max_db": 20.0,
+  "ho_dyn_diff_min_db": 3.0,
+  "ra_response_window": 3,
+  "report_all_ue_meas": true,
+  "report_interval_ms": 1000,
+  "s1ap_link_delay_ms": 15.0,
+  "sleep_wake_hold_ms": 500.0,
+  "svd_max_iterations": 30,
+  "ue_noise_figure_db": 5.0,
+  "fast_fading_enabled": false,
+  "gnb_noise_figure_db": 5.0,
+  "outage_threshold_db": -5.0,
+  "scatterer_speed_mps": 0.0,
+  "sleep_idle_duty_pct": 0.0,
+  "sleep_wake_load_pct": 60.0,
+  "cqi_report_period_ms": 10,
+  "gnb_noise_and_filter": false,
+  "tb_decode_latency_us": 100,
+  "ho_joining_timeout_ms": 45.0,
+  "ho_leaving_timeout_ms": 45.0,
+  "ra_preamble_trans_max": 50,
+  "ue_mac_sinr_period_us": 1.6,
+  "admit_handover_request": true,
+  "cqi_timer_threshold_ms": 100,
+  "o2i_low_loss_threshold": 1.0,
+  "rlc_poll_retransmit_ms": 2.0,
+  "rlc_status_prohibit_ms": 1.0,
+  "ue_outage_threshold_db": -5.0,
+  "non_self_blocking_count": 4,
+  "rlc_reordering_timer_ms": 1.0,
+  "rsrp_filter_coefficient": 4,
+  "rsrq_filter_coefficient": 4,
+  "sinr_estimate_period_us": 1600,
+  "building_penetration_loss": true,
+  "default_transmission_mode": 0,
+  "ue_sinr_estimate_period_us": 25.6,
+  "connection_setup_timeout_ms": 150.0,
+  "connection_request_timeout_ms": 15.0,
+  "connection_rejected_timeout_ms": 30.0,
+  "system_information_periodicity_ms": 5.0
+ },
+ "anomalies": [],
+ "buildings": [],
+ "ue_groups": [
+  {
+   "id": "g0",
+   "name": "G0",
+   "count": 25,
+   "height_m": 1.5,
+   "mobility": {
+    "pattern": "pedestrian",
+    "speed_mps": 1.4,
+    "waypoints": null,
+    "waypoint_mode": "pingpong"
+   },
+   "services": [
+    {
+     "qos_id": 9,
+     "protocol": "udp",
+     "slice_type": "eMBB",
+     "call_distribution": "exponential",
+     "avg_call_duration_s": null,
+     "avg_idle_duration_s": null,
+     "target_throughput_gbps": 0.05
+    }
+   ],
+   "spawn_position": {
+    "x": 40.0,
+    "y": 40.0
+   }
+  },
+  {
+   "id": "g1",
+   "name": "G1",
+   "count": 25,
+   "height_m": 1.5,
+   "mobility": {
+    "pattern": "pedestrian",
+    "speed_mps": 1.4,
+    "waypoints": null,
+    "waypoint_mode": "pingpong"
+   },
+   "services": [
+    {
+     "qos_id": 9,
+     "protocol": "udp",
+     "slice_type": "eMBB",
+     "call_distribution": "exponential",
+     "avg_call_duration_s": null,
+     "avg_idle_duration_s": null,
+     "target_throughput_gbps": 0.05
+    }
+   ],
+   "spawn_position": {
+    "x": 440.0,
+    "y": 40.0
+   }
+  },
+  {
+   "id": "g2",
+   "name": "G2",
+   "count": 25,
+   "height_m": 1.5,
+   "mobility": {
+    "pattern": "pedestrian",
+    "speed_mps": 1.4,
+    "waypoints": null,
+    "waypoint_mode": "pingpong"
+   },
+   "services": [
+    {
+     "qos_id": 9,
+     "protocol": "udp",
+     "slice_type": "eMBB",
+     "call_distribution": "exponential",
+     "avg_call_duration_s": null,
+     "avg_idle_duration_s": null,
+     "target_throughput_gbps": 0.05
+    }
+   ],
+   "spawn_position": {
+    "x": 840.0,
+    "y": 40.0
+   }
+  },
+  {
+   "id": "g3",
+   "name": "G3",
+   "count": 25,
+   "height_m": 1.5,
+   "mobility": {
+    "pattern": "pedestrian",
+    "speed_mps": 1.4,
+    "waypoints": null,
+    "waypoint_mode": "pingpong"
+   },
+   "services": [
+    {
+     "qos_id": 9,
+     "protocol": "udp",
+     "slice_type": "eMBB",
+     "call_distribution": "exponential",
+     "avg_call_duration_s": null,
+     "avg_idle_duration_s": null,
+     "target_throughput_gbps": 0.05
+    }
+   ],
+   "spawn_position": {
+    "x": 40.0,
+    "y": 440.0
+   }
+  },
+  {
+   "id": "g4",
+   "name": "G4",
+   "count": 25,
+   "height_m": 1.5,
+   "mobility": {
+    "pattern": "pedestrian",
+    "speed_mps": 1.4,
+    "waypoints": null,
+    "waypoint_mode": "pingpong"
+   },
+   "services": [
+    {
+     "qos_id": 9,
+     "protocol": "udp",
+     "slice_type": "eMBB",
+     "call_distribution": "exponential",
+     "avg_call_duration_s": null,
+     "avg_idle_duration_s": null,
+     "target_throughput_gbps": 0.05
+    }
+   ],
+   "spawn_position": {
+    "x": 440.0,
+    "y": 440.0
+   }
+  },
+  {
+   "id": "g5",
+   "name": "G5",
+   "count": 25,
+   "height_m": 1.5,
+   "mobility": {
+    "pattern": "pedestrian",
+    "speed_mps": 1.4,
+    "waypoints": null,
+    "waypoint_mode": "pingpong"
+   },
+   "services": [
+    {
+     "qos_id": 9,
+     "protocol": "udp",
+     "slice_type": "eMBB",
+     "call_distribution": "exponential",
+     "avg_call_duration_s": null,
+     "avg_idle_duration_s": null,
+     "target_throughput_gbps": 0.05
+    }
+   ],
+   "spawn_position": {
+    "x": 840.0,
+    "y": 440.0
+   }
+  }
+ ],
+ "description": "phy assert probe",
+ "base_stations": [
+  {
+   "id": "gnb-0",
+   "name": "Sa",
+   "radio": {
+    "band": {
+     "label": "NR-N77",
+     "numerology": 1,
+     "bandwidth_mhz": 50,
+     "frequency_mhz": 3600.0
+    },
+    "sleep": {
+     "mode": "none",
+     "idle_timer_ms": 200.0,
+     "wake_delay_ms": null
+    },
+    "antenna": {
+     "type": "cosine",
+     "gain_dbi": 17.0,
+     "tilt_deg": 3.0,
+     "azimuth_deg": 0.0,
+     "massive_mimo": null,
+     "vertical_beamwidth_deg": 7.5,
+     "horizontal_beamwidth_deg": 65.0
+    },
+    "tx_power_dbm": 40.0
+   },
+   "position": {
+    "x": 0.0,
+    "y": 0.0,
+    "z": 25.0
+   }
+  },
+  {
+   "id": "gnb-1",
+   "name": "Sa",
+   "radio": {
+    "band": {
+     "label": "NR-N77",
+     "numerology": 1,
+     "bandwidth_mhz": 50,
+     "frequency_mhz": 3600.0
+    },
+    "sleep": {
+     "mode": "none",
+     "idle_timer_ms": 200.0,
+     "wake_delay_ms": null
+    },
+    "antenna": {
+     "type": "cosine",
+     "gain_dbi": 17.0,
+     "tilt_deg": 3.0,
+     "azimuth_deg": 0.0,
+     "massive_mimo": null,
+     "vertical_beamwidth_deg": 7.5,
+     "horizontal_beamwidth_deg": 65.0
+    },
+    "tx_power_dbm": 40.0
+   },
+   "position": {
+    "x": 400.0,
+    "y": 0.0,
+    "z": 25.0
+   }
+  },
+  {
+   "id": "gnb-2",
+   "name": "Sa",
+   "radio": {
+    "band": {
+     "label": "NR-N77",
+     "numerology": 1,
+     "bandwidth_mhz": 50,
+     "frequency_mhz": 3600.0
+    },
+    "sleep": {
+     "mode": "none",
+     "idle_timer_ms": 200.0,
+     "wake_delay_ms": null
+    },
+    "antenna": {
+     "type": "cosine",
+     "gain_dbi": 17.0,
+     "tilt_deg": 3.0,
+     "azimuth_deg": 0.0,
+     "massive_mimo": null,
+     "vertical_beamwidth_deg": 7.5,
+     "horizontal_beamwidth_deg": 65.0
+    },
+    "tx_power_dbm": 40.0
+   },
+   "position": {
+    "x": 800.0,
+    "y": 0.0,
+    "z": 25.0
+   }
+  },
+  {
+   "id": "gnb-3",
+   "name": "Sa",
+   "radio": {
+    "band": {
+     "label": "NR-N77",
+     "numerology": 1,
+     "bandwidth_mhz": 50,
+     "frequency_mhz": 3600.0
+    },
+    "sleep": {
+     "mode": "none",
+     "idle_timer_ms": 200.0,
+     "wake_delay_ms": null
+    },
+    "antenna": {
+     "type": "cosine",
+     "gain_dbi": 17.0,
+     "tilt_deg": 3.0,
+     "azimuth_deg": 0.0,
+     "massive_mimo": null,
+     "vertical_beamwidth_deg": 7.5,
+     "horizontal_beamwidth_deg": 65.0
+    },
+    "tx_power_dbm": 40.0
+   },
+   "position": {
+    "x": 0.0,
+    "y": 400.0,
+    "z": 25.0
+   }
+  },
+  {
+   "id": "gnb-4",
+   "name": "Sa",
+   "radio": {
+    "band": {
+     "label": "NR-N77",
+     "numerology": 1,
+     "bandwidth_mhz": 50,
+     "frequency_mhz": 3600.0
+    },
+    "sleep": {
+     "mode": "none",
+     "idle_timer_ms": 200.0,
+     "wake_delay_ms": null
+    },
+    "antenna": {
+     "type": "cosine",
+     "gain_dbi": 17.0,
+     "tilt_deg": 3.0,
+     "azimuth_deg": 0.0,
+     "massive_mimo": null,
+     "vertical_beamwidth_deg": 7.5,
+     "horizontal_beamwidth_deg": 65.0
+    },
+    "tx_power_dbm": 40.0
+   },
+   "position": {
+    "x": 400.0,
+    "y": 400.0,
+    "z": 25.0
+   }
+  },
+  {
+   "id": "gnb-5",
+   "name": "Sa",
+   "radio": {
+    "band": {
+     "label": "NR-N77",
+     "numerology": 1,
+     "bandwidth_mhz": 50,
+     "frequency_mhz": 3600.0
+    },
+    "sleep": {
+     "mode": "none",
+     "idle_timer_ms": 200.0,
+     "wake_delay_ms": null
+    },
+    "antenna": {
+     "type": "cosine",
+     "gain_dbi": 17.0,
+     "tilt_deg": 3.0,
+     "azimuth_deg": 0.0,
+     "massive_mimo": null,
+     "vertical_beamwidth_deg": 7.5,
+     "horizontal_beamwidth_deg": 65.0
+    },
+    "tx_power_dbm": 40.0
+   },
+   "position": {
+    "x": 800.0,
+    "y": 400.0,
+    "z": 25.0
+   }
+  }
+ ]
+}

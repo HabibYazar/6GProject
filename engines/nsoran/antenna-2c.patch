@@ -1,0 +1,87 @@
+# NSG Phase 2c (antenna) — per-cell panel orientation, and the element model
+# that makes it mean anything.
+#
+# ── CORRECTION to the "ANTENNA: WON'T DO" verdict (2026-07-14) ──────────────
+# That verdict read: "mmWave gNBs use UniformPlanarArray 8x8 + beamforming, i.e.
+# the beam is STEERED at the UE; the config's azimuth/tilt are a different
+# antenna paradigm and forcing them in would REDUCE fidelity.
+# SetEnbPhasedArrayModelAttribute is helper-level = global anyway (no per-cell
+# antenna)." Audited at the source; it is wrong in one half and right for the
+# wrong reason in the other.
+#
+# 1. PER-CELL ANTENNAS EXIST. MmWaveHelper::InstallEnbDevice is nothing but a
+#    loop over InstallSingleEnbDevice, and each of those calls
+#    m_enbPhasedArrayModelFactory.Create<PhasedArrayModel>()
+#    (mmwave-helper.cc). The FACTORY is global; the INSTANCES are per device.
+#    Installing one node at a time, re-setting the factory in between, gives
+#    every cell its own panel. That is what this patch does.
+#
+# 2. ORIENTATION IS INERT — BECAUSE OF THE ELEMENT, NOT THE BEAMFORMING.
+#    UniformPlanarArray::GetElementFieldPattern DOES apply the 3GPP TR 38.901
+#    GCS->LCS rotation by m_alpha (bearing) / m_beta (downtilt). But
+#    PhasedArrayModel's AntennaElement attribute defaults to
+#    IsotropicAntennaModel and the mmWave helper never overrides it, and
+#    rotating a lattice of ISOTROPIC elements cancels out exactly. So the
+#    conclusion "azimuth/tilt do nothing" was correct; the reason given was not,
+#    and the reason is what made it look unfixable.
+#
+# 3. THE FIX WAS ALREADY IN THE TREE. src/antenna/model/three-gpp-antenna-model
+#    (65 deg vertical/horizontal HPBW, SLA_V, 30 dB max attenuation) ships with
+#    ns-3. Point AntennaElement at it and the panel really gates gain.
+#
+# ── What is wired ──────────────────────────────────────────────────────────
+# * radio.antenna.azimuth_deg / tilt_deg (+ massive_mimo.rows/cols) ->
+#   gnb_antenna -> NSG_GNB_ANTENNA -> --gnbAntennaFile, ';'-sep per gNB
+#   'azimuth_deg,tilt_deg,rows,cols' aligned with gnbPositionsFile. Azimuth
+#   travels in the CONFIG's compass convention (0 = North, clockwise) and the
+#   scenario converts it to ns-3's phi (0 = +x/East, counter-clockwise),
+#   wrapped into (-pi, pi] because BearingAngle's checker rejects anything else.
+# * settings.antenna_element -> --antennaElement=isotropic|3gpp. Default
+#   isotropic = the inherited engine, so existing runs are unchanged. The two
+#   settings are NOT comparable: the 3GPP element adds ~8 dBi of boresight gain.
+# * A cell whose panel is all-default (azimuth 0, tilt 0, 8x8) emits no spec at
+#   all, so an untouched config still takes the original bulk install path.
+#
+# ── Measured (2026-07-26, engines/nsoran/test_antenna_2c.py) ────────────────
+# 3 cells in a line, 6 UEs ~350 m SOUTH of them, 50 Mbps/UE offered:
+#
+#   A  isotropic, boresight AT the UEs (S)          9.77 -> 6.31 Mbps/UE
+#   B  isotropic, boresight AWAY (N, 180 off)               6.95   (+10.1%)
+#   C  3GPP,      boresight AT the UEs (S)                  9.77
+#   D  3GPP,      boresight AWAY (N, 180 off)               3.96   (-59.5%)
+#   E  3GPP,      AT the UEs but tilted 80 deg UP           2.85   (-70.9%)
+#
+#   * Element model alone: 6.31 -> 9.77 Mbps/UE (+54.8%) — the TR 38.901
+#     element's boresight gain. This is why the two settings can't be compared.
+#   * Isotropic ignores orientation: +10.1% IS the noise floor (see below), not
+#     an effect. The old verdict's observation was right.
+#   * 3GPP makes azimuth real: -59.5% straight behind the panel.
+#   * Downtilt is real too, and is the LAYOUT-INDEPENDENT half — whichever
+#     direction a UE lies in, a panel aimed at the sky puts it in the vertical
+#     pattern's attenuation. That is the form the fidelity harness uses.
+#
+#   FIDELITY HARNESS lever ("2c antenna aimed at sky"), on its own 5-cell /
+#   10-UE baseline with the demand raised to 50 Mbps/UE for both of its runs:
+#   12.56 -> 10.36 Mbps/UE (-17.5%). Same direction, much smaller than the
+#   dedicated test's -70.9%, because that baseline sits at +8.75 dB SINR (the
+#   flat part of the rate curve) with UEs spread all round, while the dedicated
+#   geometry sits at -2.17 dB with every UE on one side. -17.5% is only ~2x the
+#   noise floor, so treat the harness entry as a WIRING check and
+#   test_antenna_2c.py as the magnitude proof. Left at 10 Mbps/UE the same
+#   lever read -6%, i.e. inside the floor — a green light for the wrong reason.
+#
+# ── Traps this cost time on ────────────────────────────────────────────────
+# * MEASURE ON A LINK-LIMITED RUN. The first attempt offered 10 Mbps/UE and
+#   measured 10.69 vs 10.41 Mbps/UE — the UEs were DEMAND-limited, so a link
+#   that got much worse showed a 2.6% change. Raise the offered load until
+#   throughput is the link's answer, not the traffic generator's.
+# * THE NOISE FLOOR IS ~8-10%. Two runs that should be IDENTICAL (isotropic,
+#   two orientations) differ that much, because each run reaches a slightly
+#   different sim span in its wall-clock window and averages a different number
+#   of samples. A 90 deg rotation (~23 dB of element attenuation, partly
+#   recovered by the beamformer) sat INSIDE that floor and read as "no effect".
+#   Design the check to land far outside it — straight behind the panel, where
+#   the element hits its 30 dB front-to-back cap.
+# * L3servingSINR DOES NOT MOVE. It read -2.17 dB to two decimals in all five
+#   runs above, including the pair whose throughput differed by 55%. Whatever it
+#   reports, it is not tracking the antenna; use throughput (and PRB) instead.

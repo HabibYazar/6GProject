@@ -1,0 +1,122 @@
+[
+  {
+    "n_gnb": 3,
+    "n_ue": 6,
+    "status": "ok",
+    "span_s": 0.9,
+    "wall_s": 39.3,
+    "names": 38,
+    "kpm_indications": 11,
+    "closed_loop": true
+  },
+  {
+    "n_gnb": 3,
+    "n_ue": 18,
+    "status": "ok",
+    "span_s": 0.4,
+    "wall_s": 58.3,
+    "names": 45,
+    "kpm_indications": 11,
+    "closed_loop": true
+  },
+  {
+    "n_gnb": 3,
+    "n_ue": 45,
+    "status": "ok",
+    "span_s": 0.3,
+    "wall_s": 102.2,
+    "names": 65,
+    "kpm_indications": 11,
+    "closed_loop": true
+  },
+  {
+    "n_gnb": 3,
+    "n_ue": 75,
+    "status": "ok",
+    "span_s": 0.3,
+    "wall_s": 176.3,
+    "names": 81,
+    "kpm_indications": 11,
+    "closed_loop": true
+  },
+  {
+    "n_gnb": 6,
+    "n_ue": 12,
+    "status": "ok",
+    "span_s": 0.6,
+    "wall_s": 48.2,
+    "names": 41,
+    "kpm_indications": 20,
+    "closed_loop": true
+  },
+  {
+    "n_gnb": 6,
+    "n_ue": 30,
+    "status": "ok",
+    "span_s": 0.4,
+    "wall_s": 79.3,
+    "names": 52,
+    "kpm_indications": 20,
+    "closed_loop": true
+  },
+  {
+    "n_gnb": 6,
+    "n_ue": 60,
+    "status": "ok",
+    "span_s": 0.2,
+    "wall_s": 153.3,
+    "names": 69,
+    "kpm_indications": 20,
+    "closed_loop": true
+  },
+  {
+    "n_gnb": 6,
+    "n_ue": 90,
+    "status": "ok",
+    "span_s": 0.2,
+    "wall_s": 178.3,
+    "names": 94,
+    "kpm_indications": 20,
+    "closed_loop": true
+  },
+  {
+    "n_gnb": 6,
+    "n_ue": 150,
+    "status": "ok",
+    "span_s": 0.1,
+    "wall_s": 216.3,
+    "names": 182,
+    "kpm_indications": 20,
+    "closed_loop": true
+  },
+  {
+    "n_gnb": 12,
+    "n_ue": 24,
+    "status": "ok",
+    "span_s": 0.3,
+    "wall_s": 69.3,
+    "names": 47,
+    "kpm_indications": 38,
+    "closed_loop": true
+  },
+  {
+    "n_gnb": 12,
+    "n_ue": 60,
+    "status": "ok",
+    "span_s": 0.3,
+    "wall_s": 157.3,
+    "names": 69,
+    "kpm_indications": 38,
+    "closed_loop": true
+  },
+  {
+    "n_gnb": 12,
+    "n_ue": 120,
+    "status": "ok",
+    "span_s": 0.2,
+    "wall_s": 246.4,
+    "names": 100,
+    "kpm_indications": 38,
+    "closed_loop": true
+  }
+]

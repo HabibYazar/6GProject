@@ -1,0 +1,36 @@
+# NSG live cell on/off (Energy_state) — ns-3 mmWave module change.
+#
+# Reference patch for the EXTERNAL ns-3 tree (mmwave-LENA-oran, in the
+# Ubuntu-2004-nsoran distro — not in this repo). The gNB's RIC-control handler
+# already had an Energy_state case that hardcoded SetBSTX(cell, 0) (off only).
+# This makes it read the target TX power from the RIC control action id, so an
+# xApp can sleep AND wake a cell live (0 dBm = off, >0 = on at that power).
+# Pairs with engines/nsoran/xapp_kpm_rc.c (nsg_gen_energy_ctrl_msg sets the
+# action id to power+1; the gNB subtracts 1). Apply to:
+#   src/mmwave/model/mmwave-enb-net-device.cc  (ControlMessageReceivedCallback,
+#   the RicControlMessage::ControlMessageServiceStyle::Energy_state case)
+
+         uint16_t targetCellId = controlMessage->GetTargetCell ();
++        // NSG: the target TX power (dBm) rides in the RIC control action id (+1,
++        // since RIC-ControlAction-ID is ASN.1-constrained to 1..65535 so 0 can't
++        // encode). action id 1 => 0 dBm (sleep the cell), 31 => 30 dBm (wake it).
++        // Lets an xApp turn a cell off AND back on live (live per-gNB power).
++        int nsgPower = (int) controlMessage->m_e2SmRcControlHeaderFormat1->ric_ControlAction_ID - 1;
++        if (nsgPower < 0) nsgPower = 0;
+         for (uint32_t i = 0; i < mmWaveEnbNodes.GetN (); i++)
+           {
+             Ptr<MmWaveEnbPhy> enbPhy =
+                 mmWaveEnbNodes.Get (i)->GetDevice (0)->GetObject<MmWaveEnbNetDevice> ()->GetPhy ();
+             Ptr<MmWaveEnbNetDevice> mmdev =
+                 DynamicCast<MmWaveEnbNetDevice> (mmWaveEnbNodes.Get (i)->GetDevice (0));
+             uint16_t cell_id = mmdev->GetCellId ();
+              if (cell_id == targetCellId)
+                {
+-            printf ("Cell Id %u ", cell_id);
+-            Simulator::ScheduleWithContext (1, MilliSeconds (15), &SetBSTX, enbPhy, 0, cell_id,
+-                                            true);
++            printf ("Cell Id %u -> %d dBm ", cell_id, nsgPower);
++            Simulator::ScheduleWithContext (1, MilliSeconds (15), &SetBSTX, enbPhy, nsgPower, cell_id,
++                                            nsgPower != 0);
+             }
+           }

@@ -1,0 +1,77 @@
+# NSG roadmap item 2 — slice and traffic depth in the engine.
+#
+# Reference patch (the distro trees are the source of truth; build-slim.sh
+# bakes them). Five files change:
+#
+#   1. src/lte/model/eps-bearer.{h,cc}
+#   2. src/lte/model/lte-enb-rrc.cc
+#   3. src/mmwave/helper/mmwave-helper.cc
+#   4. src/mmwave/model/mmwave-flex-tti-mac-scheduler.{h,cc}
+#   5. scratch/scenario-zero-with_parallel_loging.cc
+#
+# ── 1+2+3. The 5QI catalogue was ours to lose ────────────────────────────────
+# EpsBearer::Qci has carried the full standardised 5G set all along — 21
+# classes, each with its own priority / packet delay budget / error loss rate in
+# ns-3's QoS table. The Level-6 patch guarded it at `qci >= 1 && qci <= 9` when
+# rebuilding the bearer in UeManager::RecvRlcSetupRequest, so every 5G-only
+# class collapsed to 9 (buffered video, best effort) on the mmWave leg. A
+# scenario could say "mission critical" or "discrete automation" and be
+# scheduled as streaming.
+#
+#   * new free functions NsgQciToEnum / NsgIsKnownQci in eps-bearer.{h,cc} —
+#     they live there rather than in the mmWave helper because BOTH the helper
+#     (bearer at attach) and LteEnbRrc (bearer rebuilt across X2) need the same
+#     answer, and lte cannot depend on mmwave;
+#   * a switch, not a cast: the QoS table ends in NS_FATAL_ERROR on an unknown
+#     QCI, so an unlisted value must land on the default instead of aborting
+#     the run at the first GetPriority() call;
+#   * mmwave-helper's NsgBearerForImsi now delegates to it (its own switch
+#     stopped at 8);
+#   * lte-enb-rrc's guard now asks the catalogue instead of assuming LTE's
+#     range.
+#
+# ── 4. Scheduler: min and dedicated shares ───────────────────────────────────
+# m_nsgSliceQuota (ceiling) gains m_nsgSliceMin and m_nsgSliceDed, set through
+# SetNsgSlicePolicy(qci, max, min, ded). SetNsgSliceQuota stays for the
+# E2SM-RC style-2 control path, which still carries only a ceiling.
+#
+# A second pass runs after the ceiling pass, before the fair division:
+#   * reserved = sum over protected slices of
+#       min(min_q * symAvail, demand_q)          <- work-conserving
+#       plus (ded_q * symAvail - that min part)  <- unconditional
+#     clamped to symAvail;
+#   * if the unprotected slices' demand exceeds symAvail - reserved, their
+#     requests are trimmed to fit, greedily from a ROTATING start (the same
+#     device the ceiling pass uses, and for the same reason: proportional
+#     scaling rounds a small budget down to zero for everyone and starves the
+#     whole group instead of squeezing it).
+#
+# Enforcement is by trimming OTHER slices' requests, which is the mirror of how
+# the ceiling trims its own. The allocator fills flows round-robin until each
+# deficit is met, so a UE whose request was cut drops out of the later rounds.
+#
+# KNOWN LIMIT (also in the header): a guarantee holds against slices that have
+# none, not between two guaranteed slices. Mutual floors need a
+# proportional-reservation allocator, not request trimming.
+#
+# ── 5. Scenario: distribution family, protocol, extended policy file ─────────
+#   * NsgUeSlice gains `dist` and `proto`; the per-UE spec string becomes
+#     'qci,rate[,on,off[,dist[,proto]]]' — old strings stay valid.
+#   * dist 0..3 -> Exponential / Constant / Uniform[0,2m] / Pareto(shape 1.5,
+#     scale m/3 so the mean is preserved). The point is burstiness at a fixed
+#     offered load.
+#   * proto 1 -> TcpSocketFactory on its own ports (DL 1236, UL 1237). A
+#     PacketSink is bound to one socket factory, so TCP aimed at the UDP sink's
+#     port is never received. The UL sink is installed ONCE up front and the DL
+#     sink ONCE PER UE — installing the latter per service aborts the sim at
+#     t=0 with "Failed to bind socket" as soon as a UE carries two TCP
+#     services, which is an ordinary config.
+#   * continuous TCP uses OnOff permanently on rather than UdpClientHelper
+#     (UDP-only) or BulkSend (ignores the service's rate).
+#   * sliceQuotasFile format widens to 'qci:max[:min[:dedicated]]' in percent;
+#     the old 'qci:pct' still means a ceiling only.
+#
+# ── VERIFIED on the real engine ──────────────────────────────────────────────
+# See slice-traffic-depth.md for the measured table and for the two bugs the
+# verification itself had — a busy engine reply being scored as zero
+# throughput, and the per-service TCP sink above.

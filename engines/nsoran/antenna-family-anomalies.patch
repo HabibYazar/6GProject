@@ -1,0 +1,110 @@
+# NSG roadmap items 3 + 4 — the antenna element family, the rest of LteEnbRrc,
+# and anomaly injection.
+#
+# Reference patch (the distro trees are the source of truth; build-slim.sh
+# bakes them). Engine-side changes are all in the scenario; the RRC attributes
+# already existed and only needed driving.
+#
+#   scratch/scenario-zero-with_parallel_loging.cc
+#
+# ── Item 3a. Antenna element family ─────────────────────────────────────────
+# Phase 2c added a single switch, isotropic vs 3gpp, because an isotropic
+# element makes panel orientation cancel out exactly. That was right and
+# incomplete: ns-3 ships four directional elements, and only ONE of them has a
+# fixed pattern.
+#
+# The schema had carried horizontal_beamwidth_deg / vertical_beamwidth_deg /
+# gain_dbi since the beginning, labelled "FAST/ANALYTICAL TIER ONLY — the real
+# engine's TR 38.901 element has 65/65 compiled in with no attributes". True of
+# that element. Not true of the engine. CosineAntennaModel takes exactly those
+# three numbers as attributes. Same shape of mistake as the earlier
+# "azimuth/tilt cannot work" verdict, and found the same way — by reading the
+# source rather than trusting the note.
+#
+#   * antennaElement widens to isotropic | 3gpp | cosine | parabolic | circular;
+#     nsgAnt3gpp becomes nsgAntDirectional (anything but isotropic needs the
+#     per-cell install loop).
+#   * NsgAntenna gains hBeamwidthDeg / vBeamwidthDeg / maxGainDb, fields 8-10 of
+#     the per-gNB panel spec. Older 7-field records default to 65/65/8.
+#   * The element is built PER PANEL. With 3gpp that was hygiene; with cosine it
+#     is required, because the element now carries per-cell state.
+#   * circular is an aperture: its beamwidth follows from radius and frequency
+#     rather than being set, so hBeamwidthDeg carries the radius (/100, metres)
+#     and the frequency comes from the scenario's own centreFrequency. Kept
+#     because it is the honest model for a fixed dish, and documented as not
+#     taking a beamwidth.
+#
+# ── Item 3b. The rest of LteEnbRrc ──────────────────────────────────────────
+# No engine change — these are stock attributes nothing was driving. Added to
+# run_scenario.sh as --ns3::LteEnbRrc::*:
+#   RsrpFilterCoefficient, RsrqFilterCoefficient  (L3 measurement smoothing:
+#     hysteresis and TTT delay the DECISION, these smooth the INPUT)
+#   ConnectionRequestTimeoutDuration, ConnectionSetupTimeoutDuration,
+#   ConnectionRejectedTimeoutDuration               (RRC setup timers)
+#   SrsPeriodicity            (a TS 36.213 Table 8.2-1 VALUE, not a free
+#                              number — the schema pins it to {0,2,5,10,20,40,
+#                              80,160,320} because ns-3 looks it up)
+#   SystemInformationPeriodicity, DefaultTransmissionMode, ReportAllUeMeas
+#
+# ── Item 4. Anomaly injection ───────────────────────────────────────────────
+# New GlobalValue gnbFaultsFile: ';'-sep 'cell,start_s,duration_s,type,value'.
+# type 0 degrades the cell's TX power to `value` dBm, type 1 is a full outage.
+# duration 0 means for the rest of the run.
+#
+#   * NsgParseFaults / NsgFaultsInit / NsgFaultApply, using the same
+#     dev->GetPhy()->SetTxPower() path the sleep controller already drives, so
+#     the power really changes mid-run.
+#   * Scheduled AFTER NsgSleepInit so the restore value captured is the
+#     CONFIGURED power, not whatever sleep depth the cell happens to be in when
+#     the fault fires.
+#   * A fault naming a cell that is not in the run is logged and dropped. The
+#     platform resolves cell ids to indices and drops unknown ones there too —
+#     breaking a different cell than the one asked for is worse than breaking
+#     none.
+#   * AdmitRrcConnectionRequest / AdmitHandoverRequest are driven as plain
+#     LteEnbRrc attributes. They are NETWORK-WIDE, and the schema says so
+#     rather than implying a per-cell bar.
+#
+# ── MEASURED on the real engine ─────────────────────────────────────────────
+# 3 cells, 6-9 UEs, 50 MHz, sim_time=20. Total DL across reporting UEs.
+#
+# Antenna (test_antenna_rrc.py):
+#   every element runs      3gpp 82.2 | cosine 84.1 | parabolic 83.4 |
+#                           circular 50.1 Mbps  (circular is a dish pattern —
+#                           much of the scene falls outside it, as it should)
+#   cosine beamwidth        120 deg -> 20 deg: +48.8% and +31.7% on two runs
+#   element gain            only measurable where the link has ROOM. At 44 dBm
+#                           the scene already runs ~94% 64QAM — the MCS table is
+#                           topped out and +20 dB moved 2.7%, i.e. nothing. At
+#                           12 dBm the same +20 dB on ONE cell moved the network
+#                           -8.7% on one run and +11.9% on another.
+#
+#                           That sign flip is the finding, not a flaw: boosting
+#                           one cell helps its own UEs and makes it the dominant
+#                           INTERFERER for its neighbours', and which effect
+#                           wins depends on where the UEs happen to land. What
+#                           IS stable is the interference signature — BLER rose
+#                           in both runs (17.6 -> 22.1%, 14.5 -> 21.6%). So the
+#                           test asserts magnitude plus rising BLER, and
+#                           deliberately not a direction. A test that had
+#                           asserted "gain improves throughput" would have
+#                           passed once and failed once, and whichever ran first
+#                           would have become the belief.
+#
+# Anomalies (test_anomalies.py):
+#   cell outage             107.9 -> 93.7 Mbps  (-13.2%)
+#   24 dB degradation       110.1 -> 92.5 Mbps  (-16.0%)
+#   recovery vs permanent   94.3 -> 99.7 Mbps   (a fault that ends costs less)
+#   refuse handovers        accepted, run completes
+#
+# NOTE: none of the anomaly numbers were reachable before the TX-power PSD bug
+# was fixed — a switched-off cell came back BYTE-IDENTICAL. See
+# txpower-psd-bug.md; that fix is what makes this item real.
+#
+# ── NOT implemented: PCI conflict ───────────────────────────────────────────
+# In this engine the cell id IS the RRC's map key. Two cells sharing one would
+# collide in the simulator's own bookkeeping — a broken cell->device lookup,
+# misrouted X2 — rather than reproduce the real symptom, which is a UE unable to
+# distinguish two cells on the air interface. It would crash in a way that looks
+# like a finding. Declined with the reason recorded, in the schema enum as well
+# as here.

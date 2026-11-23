@@ -1,0 +1,66 @@
+--- a/scratch/scenario-zero-with_parallel_loging.cc
++++ b/scratch/scenario-zero-with_parallel_loging.cc
+@@ -409,6 +409,12 @@
+ static ns3::GlobalValue ue_positions_file ("uePositionsFile", "File of ';'-sep 'x,y' UE positions; empty=auto disc",
+                                            ns3::StringValue (""),
+                                            ns3::MakeStringChecker ());
++// NSG real-control: per-gNB TX power (dBm) from the platform config. Same file
++// mechanism as positions; 0 dBm => the scenario already treats the cell as asleep
++// (energy saving, see esON_list). Empty path => the module default power everywhere.
++static ns3::GlobalValue gnb_power_file ("gnbPowerFile", "File of ';'-sep per-gNB TX power (dBm); 0=sleep; empty=default",
++                                        ns3::StringValue (""),
++                                        ns3::MakeStringChecker ());
+ // NSG consistency: fixed RNG run => the same config reproduces the same run.
+ static ns3::GlobalValue rng_run ("rngRun", "ns-3 RNG run number (fixed => reproducible)",
+                                  ns3::UintegerValue (1),
+@@ -444,6 +450,19 @@
+     return out;
+ }
+
++// Parse ";"-separated doubles (per-gNB TX power in dBm). Tolerant of blanks.
++static std::vector<double> NsgParseDoubles (const std::string &s) {
++    std::vector<double> out;
++    std::stringstream ss (s);
++    std::string item;
++    while (std::getline (ss, item, ';')) {
++        size_t a = item.find_first_not_of (" \t\r\n");
++        if (a == std::string::npos) continue;
++        try { out.push_back (std::stod (item.substr (a))); } catch (...) { }
++    }
++    return out;
++}
++
+ int
+ main(int argc, char *argv[]) {
+     // LogComponentEnableAll(LOG_PREFIX_ALL);
+@@ -779,6 +798,22 @@
+     // Install mmWave, lte, mc Devices to the nodesnumAntennasMmWave
+     NetDeviceContainer lteEnbDevs = mmwaveHelper->InstallLteEnbDevice(lteEnbNodes);
+     NetDeviceContainer mmWaveEnbDevs = mmwaveHelper->InstallEnbDevice(mmWaveEnbNodes);
++
++    // NSG real-control: apply per-gNB TX power (dBm) from the config. 0 dBm => the
++    // cell is treated as asleep (esON_list). Empty file => module default power.
++    {
++        StringValue nsgPowVal;
++        GlobalValue::GetValueByName ("gnbPowerFile", nsgPowVal);
++        std::vector<double> nsgGnbPow = NsgParseDoubles (NsgReadFile (nsgPowVal.Get ()));
++        for (uint32_t i = 0; i < mmWaveEnbDevs.GetN () && i < nsgGnbPow.size (); ++i) {
++            Ptr<MmWaveEnbNetDevice> nsgDev = mmWaveEnbDevs.Get (i)->GetObject<MmWaveEnbNetDevice> ();
++            if (nsgDev && nsgDev->GetPhy ()) {
++                // MUST match SetBSTX in mmwave-enb-net-device.cc, which is how the
++                // E2 energy-state control sleeps a cell at run time: TX power AND
++                // noise figure. Power alone leaves the cell serving normally, so
++                // cells "asleep" measured identically to cells up — the replay
++                // recorded the sleep without applying it.
++                bool nsgAsleep = (nsgGnbPow[i] == 0);
++                nsgDev->GetPhy ()->SetTxPower (nsgGnbPow[i]);
++                nsgDev->GetPhy ()->SetNoiseFigure (nsgAsleep ? 100 : 5);
++                NS_LOG_UNCOND ("[NSG] gNB " << i << " TxPower set to " << nsgGnbPow[i]
++                               << " dBm" << (nsgAsleep ? " (asleep)" : ""));
++            }
++        }
++    }
++
+     NetDeviceContainer mcUeDevs = mmwaveHelper->InstallMcUeDevice(ueNodes);
+
+     // Install the IP stack on the UEs

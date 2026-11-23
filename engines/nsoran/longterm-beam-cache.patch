@@ -1,0 +1,153 @@
+# ns-O-RAN / ns-3 spectrum: cache the long-term beamforming component PER BEAM.
+# Built as nsg-engine:1.26-ltcache. NOT in the demo image (1.25) — see the end.
+#
+# THE MEASUREMENT CHAIN THAT LED HERE
+#
+# 1. The 1-link floor is only ~2x from real time, so the ns-3 event machinery is
+#    not the wall (nsg-cost-is-per-ue-not-pairs).
+# 2. Cost grows with UEs, not cells: 12x the cells costs 2.76x, 4x the UEs costs
+#    5.87x. So link pruning is closed and something per-UE is super-linear.
+# 3. Two call-graph profiles at the same cell count, 3 vs 12 UEs, ~18.6k samples
+#    each: `CalculateLongTermComponent` is absent from the top of the 3-UE
+#    profile and is 43.25% of the 12-UE one (37.76% self). Meanwhile
+#    `GetNewChannel` COLLAPSES, 35.74% -> 5.95%.
+# 4. That collapse is the discriminator. GetLongTerm's cache is dropped when the
+#    channel regenerates OR a beam changes; channel regeneration is happening
+#    LESS, so the beam must be doing it.
+# 5. Counters confirmed it. Per million lookups, 3 cells:
+#        3 UEs : hit 996,949  miss_beam 1,881    miss_channel 1,155
+#       12 UEs : hit 871,892  miss_beam 327,163  miss_channel 840
+#    4x the UEs, 174x the beam misses, and channel misses FLAT. 99.7% of all
+#    misses at 12 UEs are beam misses.
+#
+# WHY IT HAPPENS
+# mmwave-enb-phy.cc re-points the beam at the scheduled UE every TTI. Upstream
+# keeps ONE long-term per tx-rx pair, so every switch evicts it — and the
+# scheduler cycles a bounded set of beams, so it is recomputed for a beam whose
+# long term was already computed moments earlier. Cells do not change how often
+# the beam switches; UEs do. That is why cells are cheap and UEs are not.
+#
+# WHAT THIS CHANGES
+# One slot per pair becomes a small set keyed by (channel generation, sW, uW).
+# Same inputs, same outputs, fewer recomputations. A regenerated channel still
+# clears every variant for the pair.
+#
+# MEASURED, 3 cells / 12 UEs, 120 s window, 2 seeds:
+#   speed     span 2.35 -> 2.95  =  1.26x
+#   fidelity  1,201 RSRP samples matched by (t, cell, imsi) across an early and
+#             a late window: 1,201 identical, 0 differing.
+#
+# That fidelity check is the point. Every other speed lever measured on this
+# engine traded accuracy and still stalled at ~1.3x (nsg-speed-levers-measured);
+# this one changes no number. And the gain should GROW with UE count, since beam
+# misses grow super-linearly — unmeasured above 12 UEs.
+#
+# A TRAP THIS PATCH COST ME: comparing averages between the two builds looked
+# like a fidelity REGRESSION (seed 1 throughput 12063 -> 10078). It was the span
+# confound — the faster build reached 3.3 simulated seconds against 2.4, so the
+# two averages cover different intervals. Compare per-sample by key, never
+# run-level means, and never by line order: the RIC and xApp run on real sockets,
+# so event ordering shifts between runs of the SAME build.
+#
+# NOT SHIPPED TO THE DEMO. The demo runs 1.25, verified and unchanged. This is
+# hours old and measured at one config; promote it after the demo with wider
+# verification (more UE counts, more seeds, and the fidelity check re-run).
+#
+# Apply in the engine distro:
+#   cd /home/builder/ns-O-RAN-flexric/mmwave-LENA-oran && patch -p0 < this
+#   runuser -u builder -- ./ns3 build scenario-zero-with_parallel_loging
+# ---------------------------------------------------------------------------
+--- /home/builder/ns-O-RAN-flexric/mmwave-LENA-oran/src/spectrum/model/three-gpp-spectrum-propagation-loss-model.cc.pre_ltcache	2026-07-07 01:05:27.932310522 +0300
++++ /home/builder/ns-O-RAN-flexric/mmwave-LENA-oran/src/spectrum/model/three-gpp-spectrum-propagation-loss-model.cc	2026-09-17 14:56:28.007603322 +0300
+@@ -462,18 +462,36 @@
+     uint64_t longTermId =
+         MatrixBasedChannelModel::GetKey(aPhasedArrayModel->GetId(), bPhasedArrayModel->GetId());
+ 
+-    // look for the long term in the map and check if it is valid
+-    if (m_longTermMap.find(longTermId) != m_longTermMap.end())
++    // NSG: look for a long term computed for THIS beam pair, not just this
++    // tx-rx pair. Upstream keeps one slot per pair and drops it whenever either
++    // beamforming vector changes — but the gNB re-points its beam at the
++    // scheduled UE every TTI, so with several UEs on a cell the slot is thrown
++    // away and recomputed as the scheduler cycles back to a beam it already had.
++    //
++    // A regenerated channel matrix still invalidates EVERY variant for the pair,
++    // so the generation time is checked once against the set rather than per
++    // entry — which also keeps every entry on one generation.
++    auto ltIt = m_longTermMap.find(longTermId);
++    if (ltIt != m_longTermMap.end() && !ltIt->second.empty())
+     {
+-        NS_LOG_DEBUG("found the long term component in the map");
+-        longTerm = m_longTermMap[longTermId]->m_longTerm;
+-
+-        // check if the channel matrix has been updated
+-        // or the s beam has been changed
+-        // or the u beam has been changed
+-        update = (m_longTermMap[longTermId]->m_channel->m_generatedTime !=
+-                      channelMatrix->m_generatedTime ||
+-                  m_longTermMap[longTermId]->m_sW != sW || m_longTermMap[longTermId]->m_uW != uW);
++        if (ltIt->second.front()->m_channel->m_generatedTime !=
++            channelMatrix->m_generatedTime)
++        {
++            ltIt->second.clear(); // the channel moved: every beam variant is stale
++            notFound = true;
++        }
++        else
++        {
++            for (const auto& cached : ltIt->second)
++            {
++                if (cached->m_sW == sW && cached->m_uW == uW)
++                {
++                    NS_LOG_DEBUG("found the long term component in the map");
++                    return cached->m_longTerm;
++                }
++            }
++            notFound = true; // this pair is cached, but not for this beam
++        }
+     }
+     else
+     {
+@@ -489,12 +507,19 @@
+         Ptr<LongTerm> longTermItem = Create<LongTerm>();
+         longTermItem->m_longTerm = longTerm;
+         longTermItem->m_channel = channelMatrix;
+-        longTermItem->m_sW = std::move(sW);
+-        longTermItem->m_uW = std::move(uW);
+-        // store the long term to reduce computation load
+-        // only the small scale fading needs to be updated if the large scale parameters and antenna
+-        // weights remain unchanged.
+-        m_longTermMap[longTermId] = longTermItem;
++        // NOT moved: the vectors are the cache KEY now and are compared on every
++        // later lookup, so the entry has to keep its own copy.
++        longTermItem->m_sW = sW;
++        longTermItem->m_uW = uW;
++        // Store this beam's long term alongside the pair's other beams. Oldest
++        // out when full — the scheduler cycles a bounded set, so the working set
++        // is the number of UEs the cell serves.
++        auto& variants = m_longTermMap[longTermId];
++        if (variants.size() >= NSG_LT_VARIANTS)
++        {
++            variants.erase(variants.begin());
++        }
++        variants.push_back(longTermItem);
+     }
+ 
+     return longTerm;
+--- /home/builder/ns-O-RAN-flexric/mmwave-LENA-oran/src/spectrum/model/three-gpp-spectrum-propagation-loss-model.h.pre_ltcache	2026-07-07 01:05:27.936310524 +0300
++++ /home/builder/ns-O-RAN-flexric/mmwave-LENA-oran/src/spectrum/model/three-gpp-spectrum-propagation-loss-model.h	2026-09-17 14:56:28.007603322 +0300
+@@ -246,8 +246,13 @@
+ 
+     int64_t DoAssignStreams(int64_t stream) override;
+ 
+-    mutable std::unordered_map<uint64_t, Ptr<const LongTerm>>
+-        m_longTermMap;                           //!< map containing the long term components
++    mutable std::unordered_map<uint64_t, std::vector<Ptr<const LongTerm>>>
++        m_longTermMap; //!< per tx-rx pair, the long-term components cached by beam
++
++    /// How many beam variants to keep per tx-rx pair. The gNB re-points its beam
++    /// at the scheduled UE EVERY TTI, so a single slot is evicted on every
++    /// switch and recomputed when the scheduler cycles back.
++    static constexpr std::size_t NSG_LT_VARIANTS = 32;
+     Ptr<MatrixBasedChannelModel> m_channelModel; //!< the model to generate the channel matrix
+ };
+ } // namespace ns3

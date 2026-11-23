@@ -1,0 +1,172 @@
+# MmWaveFlexTtiMacScheduler: the transport-block split aborted the run, and hid
+# an underflow the assert could not catch.
+#
+# ── The abort ──────────────────────────────────────────────────────────────
+# `mmwave-flex-tti-mac-scheduler.cc` divides a DL transport block between a UE's
+# active RLC flows with INTEGER division. Enough flows -- which is what enough
+# UEs on one narrow-carrier cell produces -- rounds the share to zero, and
+#     NS_ASSERT(ueSchedInfo.m_rlcPduInfo[i].m_size > 0)
+# aborts ns-3. Reproduced 2026-09-14 on 3 cells / 18 UEs at 10 MHz:
+#     NS_ASSERT failed, cond="ueSchedInfo.m_rlcPduInfo[i].m_size > 0",
+#     +1.436250000s ... mmwave-flex-tti-mac-scheduler.cc, line=1830
+#
+# THE TIMESTAMP IS THE POINT. It fires at t=1.44 s, not at startup. The platform
+# already guards this with `max_ue_per_cell_for_bw` (engine_envelope.py), but
+# that guard is computed from the topology AS DRAWN while the load that trips the
+# split arrives later: UEs attach by RSRP, so a cluster concentrates them, and a
+# `cell_outage` fault moves a whole cell of traffic onto its neighbours. A static
+# guard cannot see a run-time redistribution. A day-long run has a day of chances
+# to meet it, which is why this became worth fixing once `kpm_collect_s` made
+# long runs possible at all.
+#
+# ── The defect the assert was hiding ───────────────────────────────────────
+# Three lines below the assert:
+#     UpdateDlRlcBufferInfo(rnti, lcid, m_rlcPduInfo[i].m_size - m_subHdrSize);
+# takes `uint16_t size`, and `m_subHdrSize` is 4. A share of 1..3 bytes therefore
+# PASSES `> 0` and underflows to ~65533 -- corrupting RLC buffer accounting
+# silently rather than aborting loudly. Nobody had looked for this because the
+# assert above it looked like the guard.
+#
+# ── The fix ────────────────────────────────────────────────────────────────
+# Not to relax the assert but to stop producing the value. Serve as many flows as
+# the transport block can actually carry at a sub-header plus one byte each, and
+# let the rest wait for a later slot. Nothing is dropped: a deferred flow keeps
+# its queued bytes and the block still leaves full, spread over fewer flows. The
+# assert is then TIGHTENED from `> 0` to `>= m_subHdrSize + 1`, so the underflow
+# case is caught too rather than passing silently.
+#
+# Apply in the engine distro, then rebuild (a full library build, ~minutes --
+# this is src/, not scratch):
+#   cd /home/builder/ns-O-RAN-flexric/mmwave-LENA-oran
+#   patch -p0 < this && runuser -u builder -- ./ns3 build
+#
+# The tree is configured for the `default` profile, which is the one the product
+# loads (run_scenario.sh: NSG_NS3_PROFILE=default). See nsg-ns3-build-profile:
+# a rebuild in the wrong profile lands in a library nothing runs.
+#
+# ── Measured 2026-09-14, nsg-engine:1.16 ───────────────────────────────────
+# The abort is gone at both recorded points:
+#   3 cells, 18 UE (6/cell), 10 MHz   was: NS_ASSERT at t=1.436 s
+#                                     now: clean, span 2.2 s, 40 KPM names, 46 ind
+#   3 cells, 30 UE (10/cell), 10 MHz  was: NS_ASSERT
+#                                     now: clean, span 1.1 s, 24 indications
+#
+# And nothing moves in the regime that already worked. Two ways of asking:
+#
+#   Bare path, per-cell Joules at a FIXED simulated time (t=2.00 s), 20 MHz /
+#   6 UEs — BIT-IDENTICAL across the old build, the new build and two repeats:
+#       cell2 1331.5 J   cell3 1331.5 J   cell4 2406.7 J
+#
+#   Product path (real traffic, which is what actually creates multiple RLC
+#   flows per UE), same config and seed, three runs per image:
+#       DRB.UEThpDl mean   1.15: 12763 / 11978 / 12997    1.16: 12775 / 12126 / 12978
+#       RRU.PrbUsedDl mean 1.15: 12.52 / 13.58 / 12.18    1.16: 12.57 / 13.05 / 12.00
+#       handovers          1.15: 1 / 1 / 0                1.16: 1 / 1 / 0
+#   The two distributions overlap; the difference in means (0.4% throughput,
+#   1.7% PRB) is far inside the 8-11% spread BETWEEN RUNS OF THE SAME IMAGE.
+#
+# A METHOD NOTE worth keeping. The first regression test was a byte-compare of
+# /tmp/scn0.log before and after, and it reported DIFFERS at byte 52877 — which
+# would have looked like the fix changing results. It does not: two runs of the
+# SAME build already differ at byte 6587, because the collection window is bound
+# by wall clock and the xApp's subscription lands at a different simulated
+# instant each time. Check that a comparison can distinguish anything before
+# believing what it says.
+#
+# ── The diff (against src/mmwave/model/mmwave-flex-tti-mac-scheduler.cc) ───
+--- src/mmwave/model/mmwave-flex-tti-mac-scheduler.cc.bak_zeropdu	2026-09-14 11:54:20.455926054 +0300
++++ src/mmwave/model/mmwave-flex-tti-mac-scheduler.cc	2026-09-14 11:54:41.624999412 +0300
+@@ -1801,33 +1801,79 @@
+             }
+ 
+             // distribute bytes between active RLC queues
+-            unsigned numLc = ueSchedInfo.m_rlcPduInfo.size();
+-            unsigned bytesRem = dci.m_tbSize;
++            //
++            // NSG: this split used to ABORT THE RUN. The share is integer
++            // division, so enough active flows on one UE -- which is what enough
++            // UEs on one narrow-carrier cell produces -- rounds it to zero and
++            // trips the NS_ASSERT below. Measured on 3 cells / 18 UEs at 10 MHz:
++            // aborts at t=1.436 s. That timing is the point. It is a RUN-TIME
++            // hazard, not a startup one, and the UEs-per-cell guard in the
++            // platform cannot see it: that guard is computed from the topology
++            // as drawn, while the load which trips this arrives later -- UEs
++            // attach by RSRP, and a cell outage moves a whole cell of traffic
++            // onto its neighbours. A day-long run has a day of chances to meet
++            // it.
++            //
++            // The assert was also hiding a second defect it cannot catch. The
++            // line under it computes `m_size - m_subHdrSize` into a uint16_t
++            // parameter, so a share of 1..3 bytes passes `> 0` and UNDERFLOWS to
++            // ~65533 -- corrupting RLC buffer accounting silently instead of
++            // aborting loudly.
++            //
++            // So the fix is not to relax the assert but to stop producing the
++            // value: serve as many flows as this transport block can actually
++            // carry, and let the rest wait for a later slot. Nothing is dropped
++            // -- a deferred flow keeps its queued bytes, and the block still
++            // leaves full, just spread over fewer flows.
++            const uint16_t minPduSize = m_subHdrSize + 1;   // sub-header + 1 byte
++            unsigned bytesRem = 0;
+             unsigned numFulfilled = 0;
+-            uint16_t avgPduSize = bytesRem / numLc;
+-            // first for loop computes extra to add to average if some flows are less than average
+-            for (unsigned i = 0; i < ueSchedInfo.m_rlcPduInfo.size(); i++)
++            uint16_t avgPduSize = 0;
++            while (true)
+             {
+-                if (ueSchedInfo.m_rlcPduInfo[i].m_size < avgPduSize)
++                bytesRem = dci.m_tbSize;
++                numFulfilled = 0;
++                avgPduSize = bytesRem / ueSchedInfo.m_rlcPduInfo.size();
++                // first for loop computes extra to add to average if some flows are less than average
++                for (unsigned i = 0; i < ueSchedInfo.m_rlcPduInfo.size(); i++)
+                 {
+-                    bytesRem -= ueSchedInfo.m_rlcPduInfo[i].m_size;
+-                    numFulfilled++;
++                    if (ueSchedInfo.m_rlcPduInfo[i].m_size < avgPduSize)
++                    {
++                        bytesRem -= ueSchedInfo.m_rlcPduInfo[i].m_size;
++                        numFulfilled++;
++                    }
+                 }
+-            }
+ 
+-            if (numFulfilled < ueSchedInfo.m_rlcPduInfo.size())
+-            {
+-                avgPduSize = bytesRem / (ueSchedInfo.m_rlcPduInfo.size() - numFulfilled);
++                if (numFulfilled < ueSchedInfo.m_rlcPduInfo.size())
++                {
++                    avgPduSize = bytesRem / (ueSchedInfo.m_rlcPduInfo.size() - numFulfilled);
++                }
++
++                // Only flows that get CLAMPED to the average are at risk. If
++                // every queue already sits under it each keeps its own size, and
++                // those are built with a sub-header included, so they are safe.
++                if (numFulfilled == ueSchedInfo.m_rlcPduInfo.size()
++                    || avgPduSize >= minPduSize
++                    || ueSchedInfo.m_rlcPduInfo.size() == 1)
++                {
++                    break;
++                }
++                ueSchedInfo.m_rlcPduInfo.pop_back();   // this flow waits a slot
+             }
+ 
+             for (unsigned i = 0; i < ueSchedInfo.m_rlcPduInfo.size(); i++)
+             {
+                 if (ueSchedInfo.m_rlcPduInfo[i].m_size > avgPduSize)
+                 {
+-                    ueSchedInfo.m_rlcPduInfo[i].m_size = avgPduSize;
++                    // NSG: never clamp below a sub-header plus one byte. The
++                    // loop above makes this unreachable for any real transport
++                    // block; it stands so the subtraction further down cannot
++                    // underflow even if that reasoning is ever wrong.
++                    ueSchedInfo.m_rlcPduInfo[i].m_size =
++                        (avgPduSize > minPduSize) ? avgPduSize : minPduSize;
+                 }
+                 // else tbSize equals RLC queue size
+-                NS_ASSERT(ueSchedInfo.m_rlcPduInfo[i].m_size > 0);
++                NS_ASSERT(ueSchedInfo.m_rlcPduInfo[i].m_size >= minPduSize);
+                 /*for (itRlcBuf = m_rlcBufferReq.begin (); itRlcBuf != m_rlcBufferReq.end ();
+                 itRlcBuf++)
+                 {

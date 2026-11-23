@@ -1,0 +1,1 @@
+wsl -d Ubuntu -e bash /home/chancelor/nsg_ai_platform/tools/nightly_fidelity.sh

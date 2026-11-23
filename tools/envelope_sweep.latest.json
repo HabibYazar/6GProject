@@ -1,0 +1,164 @@
+[
+  {
+    "n_gnb": 3,
+    "n_ue": 9,
+    "bw_mhz": 10,
+    "verdict": "OK",
+    "signature": "",
+    "wall_s": 95.7,
+    "log_lines": 1274
+  },
+  {
+    "n_gnb": 3,
+    "n_ue": 6,
+    "bw_mhz": 10,
+    "verdict": "OK",
+    "signature": "",
+    "wall_s": 95.2,
+    "log_lines": 1010
+  },
+  {
+    "n_gnb": 3,
+    "n_ue": 30,
+    "bw_mhz": 20.0,
+    "verdict": "OK",
+    "signature": "",
+    "wall_s": 95.2,
+    "log_lines": 1013
+  },
+  {
+    "n_gnb": 3,
+    "n_ue": 15,
+    "bw_mhz": 20.0,
+    "verdict": "OK",
+    "signature": "",
+    "wall_s": 95.2,
+    "log_lines": 1118
+  },
+  {
+    "n_gnb": 3,
+    "n_ue": 75,
+    "bw_mhz": 50,
+    "verdict": "OK",
+    "signature": "",
+    "wall_s": 95.2,
+    "log_lines": 962
+  },
+  {
+    "n_gnb": 3,
+    "n_ue": 37,
+    "bw_mhz": 50,
+    "verdict": "OK",
+    "signature": "",
+    "wall_s": 95.2,
+    "log_lines": 850
+  },
+  {
+    "n_gnb": 7,
+    "n_ue": 21,
+    "bw_mhz": 10,
+    "verdict": "OK",
+    "signature": "",
+    "wall_s": 95.2,
+    "log_lines": 1654
+  },
+  {
+    "n_gnb": 7,
+    "n_ue": 14,
+    "bw_mhz": 10,
+    "verdict": "OK",
+    "signature": "",
+    "wall_s": 95.2,
+    "log_lines": 1500
+  },
+  {
+    "n_gnb": 7,
+    "n_ue": 70,
+    "bw_mhz": 20.0,
+    "verdict": "OK",
+    "signature": "",
+    "wall_s": 95.2,
+    "log_lines": 1598
+  },
+  {
+    "n_gnb": 7,
+    "n_ue": 35,
+    "bw_mhz": 20.0,
+    "verdict": "OK",
+    "signature": "",
+    "wall_s": 95.2,
+    "log_lines": 1584
+  },
+  {
+    "n_gnb": 7,
+    "n_ue": 150,
+    "bw_mhz": 50,
+    "verdict": "SLOW",
+    "signature": "alive but did not reach t=0.1 in the window",
+    "wall_s": 95.2,
+    "log_lines": 1583
+  },
+  {
+    "n_gnb": 7,
+    "n_ue": 75,
+    "bw_mhz": 50,
+    "verdict": "OK",
+    "signature": "",
+    "wall_s": 95.2,
+    "log_lines": 1618
+  },
+  {
+    "n_gnb": 16,
+    "n_ue": 48,
+    "bw_mhz": 10,
+    "verdict": "OK",
+    "signature": "",
+    "wall_s": 95.2,
+    "log_lines": 2986
+  },
+  {
+    "n_gnb": 16,
+    "n_ue": 32,
+    "bw_mhz": 10,
+    "verdict": "OK",
+    "signature": "",
+    "wall_s": 95.2,
+    "log_lines": 2922
+  },
+  {
+    "n_gnb": 16,
+    "n_ue": 150,
+    "bw_mhz": 20.0,
+    "verdict": "SLOW",
+    "signature": "alive but did not reach t=0.1 in the window",
+    "wall_s": 95.2,
+    "log_lines": 2970
+  },
+  {
+    "n_gnb": 16,
+    "n_ue": 75,
+    "bw_mhz": 20.0,
+    "verdict": "OK",
+    "signature": "",
+    "wall_s": 95.3,
+    "log_lines": 3094
+  },
+  {
+    "n_gnb": 16,
+    "n_ue": 150,
+    "bw_mhz": 50,
+    "verdict": "SLOW",
+    "signature": "alive but did not reach t=0.1 in the window",
+    "wall_s": 95.3,
+    "log_lines": 2962
+  },
+  {
+    "n_gnb": 16,
+    "n_ue": 75,
+    "bw_mhz": 50,
+    "verdict": "OK",
+    "signature": "",
+    "wall_s": 95.2,
+    "log_lines": 3094
+  }
+]

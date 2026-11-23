@@ -1,0 +1,43 @@
+# NSG UL reporting — the engine is no longer DL-only.
+#
+# Reference patch (distro trees are the source of truth; build-slim.sh bakes
+# them). "The engine's known gap is UL" turned out to be wrong on two counts:
+# the bearer stats calculator tracked UL all along (GetUlRxData & co — nothing
+# read it), and the scenario simply carried no uplink traffic to measure.
+#
+# ── 1. scratch/scenario-zero-with_parallel_loging.cc ─────────────────────────
+# Per-UE UPLINK traffic: each UE sends UDP to the remote host at 25% of its
+# slice's DL rate (the usual asymmetry), 1400 B payload. ONE shared sink on
+# the remote host, installed BEFORE the per-UE loop — installing it inside the
+# loop re-binds the port for every UE after the first and aborts the sim at
+# t=0 with "Failed to bind socket" (found the hard way).
+#
+# ── 2. contrib/oran-interface/helper/mmwave-indication-message-helper.{h,cc} ─
+# AddCuUpUePmItem gains two optional params (default -1 = omit, so existing
+# callers' messages stay byte-identical):
+#   DRB.PdcpSduVolumeUl_Filter.UEID   uplink PDCP SDU volume (kbit) this period
+#   DRB.PdcpSduBitRateUl.UEID         uplink bitrate (kbps)
+#
+# ── 3. src/mmwave/model/mmwave-enb-net-device.cc ─────────────────────────────
+# BuildRicIndicationMessageCuUp: per UE,
+#   nsgUlRxKbit = m_e2PdcpStatsCalculator->GetUlRxData (imsi, 3) * 8 / 1e3;
+#   nsgUlKbps   = nsgUlRxKbit / m_e2Periodicity;
+# passed into AddCuUpUePmItem. Read happens BEFORE ResetResultsForImsiLcid, so
+# each report window is a fresh measurement, not a cumulative sum.
+#
+# Downstream needs NOTHING: the xApp decodes KPM names generically and
+# engine_service collects every "name = value" pair, so the new metrics appear
+# in kpm.measurements as DRB.PdcpSduVolumeUl / DRB.PdcpSduBitRateUl.
+#
+# ── VERIFIED on the real engine (2026-07-16) ─────────────────────────────────
+# 10 UE / 5 gNB / 50 MHz, DL slice 10 Mbps (UL offered 2.5 Mbps/UE):
+#   DRB.PdcpSduBitRateUl mean ~350 kbps, volume/bitrate self-consistent
+#   (171 kbit / 0.5 s = 343 kbps).
+# Demand doubled (DL 20 -> UL offered 5 Mbps): mean 761 kbps (~2.2x) — the
+# measurement scales with offered load and sits well under the offered rate,
+# i.e. it is a real mmWave TDD UL capacity measurement, not a config echo.
+# Platform path: /ric/validate-nsoran returns both metrics (status=ok).
+
+# ── ADDENDUM (2026-07-18): UL delay ──────────────────────────────────────────
+# DRB.PdcpSduDelayUl.UEID added to the CU-UP per-UE items (GetUlDelay, same
+# 0.1 ms unit as the DL delay). Measured on the real engine: 2.1-2.6 ms.

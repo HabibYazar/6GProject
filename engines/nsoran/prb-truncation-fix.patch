@@ -1,0 +1,41 @@
+# NSG fix: RRU.PrbUsedDl zeroed out in high-MCS / light-load regimes
+#
+# Reference note (distro trees are the source of truth; build-slim.sh bakes
+# them). One file pair changes:
+#   contrib/oran-interface/helper/mmwave-indication-message-helper.{h,cc}
+#
+# ── Symptom ──────────────────────────────────────────────────────────────────
+# A buildings run measured DL 8.9 Mbps/UE with RRU.PrbUsedDl mean 0.0 —
+# physically impossible (you cannot carry throughput on zero PRBs).
+# Intermittent: the same config later reported sane values (5-13 per UE).
+#
+# ── Root cause: a double truncation that defeats its own ceil ────────────────
+# The caller (mmwave-enb-net-device.cc, BuildRicIndicationMessageDu) computes
+# the per-UE PRB average as a fractional double:
+#     macPrb = macNumberOfSymbols / denominatorPrb * 139;
+# and passes it to AddDuUePmItem — whose parameter was **long**, so the
+# fraction was truncated AT THE CALL BOUNDARY. The body then does
+#     ueVal->AddItem<long> ("RRU.PrbUsedDl.UEID", (long) std::ceil (macPrb));
+# i.e. the author intended to round the fraction UP — but ceil never sees a
+# fraction, because it already died in the parameter. Any UE whose per-window
+# PRB average fell below 1 (exactly the high-MCS regime buildings create, or
+# any light-load cell) reported 0; with every UE below 1, the whole metric
+# read 0.0. Whether a given run trips it depends on the report-window timing,
+# hence the intermittence.
+#
+# ── Fix ──────────────────────────────────────────────────────────────────────
+# The macPrb parameter is now double (header + impl); the existing
+# (long) std::ceil (macPrb) finally does what it was written to do. Values
+# shift up by <1 PRB (5->6, 12->13 observed) — the intended ceil semantics.
+# Callers already passed a double, so no call-site changes; long arguments
+# from other callers widen implicitly.
+#
+# NOTE: signature changes in a shared lib require rebuilding EVERYTHING that
+# links it — a hot docker-cp of only the changed .so left the old scenario
+# binary calling a mangled symbol that no longer existed and the run died as
+# "partial". Always ./ns3 build + build-slim + container restart.
+#
+# ── Verified (2026-07-16) ────────────────────────────────────────────────────
+# Buildings run after fix: SINR 24.9 dB, DL 8.76 Mbps/UE, PRB 7.6 (per-UE
+# 6-14). Permanent regression guard in tools/fidelity_report.py:
+# "L4 PRB consistency — thp > 0 requires PRB > 0".

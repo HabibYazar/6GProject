@@ -1,0 +1,29 @@
+{
+  "what": "The KPM collection window IS the batch run's simulated horizon, and the trade is linear.",
+  "measured": "2026-09-13, nsg-engine:1.13",
+  "bare_defaults_3gnb_6ue": {
+    "note": "run_scenario.sh straight from docker exec, engine defaults (20 MHz, no buildings, ISD 1000 m)",
+    "points": [
+      {"window_s": 10,  "wall_s": 40,  "span_s": 4.1,  "indications": 88},
+      {"window_s": 30,  "wall_s": 59,  "span_s": 5.8,  "indications": 121},
+      {"window_s": 60,  "wall_s": 90,  "span_s": 9.2,  "indications": 198},
+      {"window_s": 120, "wall_s": 150, "span_s": 13.9, "indications": 299}
+    ],
+    "sim_s_per_wall_s": [0.103, 0.098, 0.102, 0.093]
+  },
+  "product_path_3gnb_6ue": {
+    "note": "full platform config at 50 MHz through :8090/run, then through the backend's /ric/validate-nsoran",
+    "points": [
+      {"window_s": "auto (10)", "wall_s": 39.2,  "span_s": 1.1, "names": 38, "indications": 11},
+      {"window_s": 120,         "wall_s": 149.2, "span_s": 3.6, "names": 44, "indications": 44}
+    ]
+  },
+  "fault_fires_when_the_horizon_is_bought": {
+    "config": "3 cells, 6 UEs, cell_outage on gnb-1 at start_s=2.0, kpm_collect_s=120",
+    "no_fault":   {"span_s": 3.6, "per_cell_j": {"2": 9453.8,  "3": 9839.8, "4": 11782.8}},
+    "with_fault": {"span_s": 3.9, "per_cell_j": {"2": 10581.7, "3": 4841.3, "4": 9063.4}},
+    "end_to_end_via_backend": {"span_s": 4.0, "per_cell_j": {"2": 10835.6, "3": 4841.3, "4": 9130.0},
+                               "status": "ok", "closed_loop": true},
+    "verdict": "the faulted cell draws about half the energy of the unfaulted run and its neighbours pick up the load; at the automatic window the same request came back matching the no-fault run and PASSED"
+  }
+}

@@ -1,0 +1,44 @@
+# NSG call/session dynamics — traffic that breathes instead of a constant faucet.
+#
+# Reference note (distro trees are the source of truth; build-slim.sh bakes
+# them). The Tera5G-class "average call duration / time between calls" model,
+# at the scale this engine can actually observe.
+#
+# ── Config (platform side) ───────────────────────────────────────────────────
+# ServiceRequirement gains two optional fields (schema.py):
+#   avg_call_duration_s   mean length of an active burst (exponential)
+#   avg_idle_duration_s   mean silence between bursts (exponential)
+# Omit both = the classic continuous stream (fully backward compatible).
+# The AI config-generator prompt teaches the fields (llm_agent.py).
+#
+# ── Spec string (backend -> engine) ──────────────────────────────────────────
+# Level-5 per-UE spec extends "qci,rate_mbps" -> "qci,rate_mbps[,on_s,off_s]".
+# TIME COMPRESSION (_ue_slice_specs, main.py): the mmWave sim only advances
+# ~1-2 SIMULATED seconds inside a run window, and ns-3's OnOffApplication
+# starts with an Off period — so human-scale call times (30 s calls) would
+# never toggle and traffic would read zero (observed). The backend therefore
+# rescales the pair to a <= 1 s period with the EXACT on:off ratio preserved:
+# what the RIC test needs from a call model is the load STRUCTURE (duty cycle
+# + fluctuation), not the literal seconds. 2 s / 20 s -> 0.091 / 0.909.
+#
+# ── Scenario (scratch/scenario-zero-with_parallel_loging.cc) ─────────────────
+# Slice parse now reads the optional 3rd/4th fields (old 2-field strings keep
+# working). When a call model is present, DL and UL traffic use
+# OnOffApplication (UDP, 1400 B, DataRate = slice rate / 25% for UL) with
+# ExponentialRandomVariable On/Off times; otherwise the CBR UdpClient path is
+# unchanged.
+#
+# ── VERIFIED on the real engine (2026-07-17) ─────────────────────────────────
+# Same offered rate (20 Mbps/UE), continuous vs ~9% duty cycle:
+#   continuous : DRB.UEThpDl mean 10.1 Mbps (per-UE 6.9-14.4)
+#   bursty     : mean 4.8 Mbps, per-UE spread 0.0 -> 16.4 Mbps
+# i.e. some report windows silent, some in full burst — the load fluctuation
+# a RIC test needs. Engine test: engines/nsoran/test_calls.py; unit test of
+# the compression in the harness path; fidelity lever "L5 call dynamics"
+# rides the full config -> backend -> engine path.
+#
+# ── KNOWN OPEN (tracked) ─────────────────────────────────────────────────────
+# The KPM reporting path can sample ZERO-counter windows (PRB/UL zero while
+# throughput flows): deterministic under buildings, intermittent on the plain
+# baseline. Guarded red by fidelity "L4 PRB consistency"; root-cause task
+# spawned (counter reset/window race or stale rnti/cell keys).

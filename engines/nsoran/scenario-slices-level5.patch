@@ -1,0 +1,76 @@
+# NSG Level-5 — per-UE slice traffic in the ns-O-RAN engine.
+#
+# Reference patch for the EXTERNAL ns-3 tree (mmwave-LENA-oran, in the
+# Ubuntu-2004-nsoran distro — not in this repo). Applies to:
+#   scratch/scenario-zero-with_parallel_loging.cc
+#
+# WHY: every UE got the SAME hardcoded UDP stream (200 B / 500 us = 3.2 Mbps), so
+# the config's slices (eMBB vs uRLLC vs mMTC, their 5QI and target throughput)
+# shaped NOTHING in the real engine. Each UE now carries its group's 5QI and DL
+# demand, so different slices really load the RAN differently and show up per-UE
+# in the KPM.
+#
+# Backend pairs: main.py _ue_slice_specs() emits ';'-sep per-UE "qci,rate_mbps"
+# aligned slot-for-slot with ue_positions (both use the shared _ue_alloc()), rate =
+# the sum of the group's service targets clamped to [0.5, 50] Mbps (ns-3 mmWave is
+# heavy). run_scenario.sh / run_live_session.sh pass NSG_UE_SLICES -> --ueSlicesFile.
+#
+# NOTE: the qci is carried and logged but not yet turned into a dedicated EPS
+# bearer — the default MmWaveFlexTtiMacScheduler is not QCI-aware (only the
+# maxrate/maxweight schedulers reference QCI), so bearers alone would not change
+# scheduling. Bearer + QoS-aware scheduler is the follow-up that unlocks slice
+# (PRB) control.
+
++// NSG Level-5: per-UE slice + DL demand, ';'-sep 'qci,rate_mbps' aligned with
++// uePositionsFile. Empty => the legacy fixed 3.2 Mbps for every UE.
++static ns3::GlobalValue ue_slices_file ("ueSlicesFile",
++                                        "File of ';'-sep per-UE 'qci,rate_mbps'; empty=uniform default",
++                                        ns3::StringValue (""),
++                                        ns3::MakeStringChecker ());
+
+ # --- in main(), where the DL UDP applications are installed ---
+     ApplicationContainer clientApp;
++
++    std::vector<std::pair<int, double>> nsgUeSlices;   // (qci, rate_mbps) per UE
++    {
++        StringValue nsgSlVal;
++        GlobalValue::GetValueByName ("ueSlicesFile", nsgSlVal);
++        std::string spec = NsgReadFile (nsgSlVal.Get ());
++        std::stringstream ss (spec);
++        std::string item;
++        while (std::getline (ss, item, ';')) {
++            if (item.find_first_not_of (" \t\r\n") == std::string::npos) continue;
++            size_t comma = item.find (',');
++            if (comma == std::string::npos) continue;
++            try {
++                int qci = std::stoi (item.substr (0, comma));
++                double rate = std::stod (item.substr (comma + 1));
++                if (rate > 0.0) nsgUeSlices.emplace_back (qci, rate);
++            } catch (...) { }
++        }
++        if (!nsgUeSlices.empty ())
++            NS_LOG_UNCOND ("[NSG] per-UE slice traffic: " << nsgUeSlices.size () << " UE(s) from config");
++    }
+
+     for (uint32_t u = 0; u < ueNodes.GetN(); ++u) {
+         PacketSinkHelper dlPacketSinkHelper("ns3::UdpSocketFactory",
+                                             InetSocketAddress(Ipv4Address::GetAny(), 1234));
+         sinkApp.Add(dlPacketSinkHelper.Install(ueNodes.Get(u)));
+         UdpClientHelper dlClient(ueIpIface.GetAddress(u), 1234);
+-        dlClient.SetAttribute("Interval", TimeValue(MicroSeconds(500)));
+-        dlClient.SetAttribute("MaxPackets", UintegerValue(UINT32_MAX));
+-        dlClient.SetAttribute("PacketSize", UintegerValue(200));
++        uint32_t nsgPktBytes = 200;
++        Time nsgInterval = MicroSeconds (500);          // legacy default = 3.2 Mbps
++        if (u < nsgUeSlices.size ()) {
++            double rateBps = nsgUeSlices[u].second * 1e6;
++            nsgPktBytes = 1400;                          // keep the packet rate sane
++            nsgInterval = Seconds (nsgPktBytes * 8.0 / rateBps);
++            NS_LOG_UNCOND ("[NSG] UE " << u << " slice qci=" << nsgUeSlices[u].first
++                           << " rate=" << nsgUeSlices[u].second << " Mbps");
++        }
++        dlClient.SetAttribute("Interval", TimeValue(nsgInterval));
++        dlClient.SetAttribute("MaxPackets", UintegerValue(UINT32_MAX));
++        dlClient.SetAttribute("PacketSize", UintegerValue(nsgPktBytes));
+         clientApp.Add(dlClient.Install(remoteHost));
+     }

@@ -1,0 +1,160 @@
+--- a/scratch/scenario-zero-with_parallel_loging.cc
++++ b/scratch/scenario-zero-with_parallel_loging.cc
+@@ -400,6 +400,50 @@
+                                                   ns3::DoubleValue (1000),
+                                                   ns3::MakeDoubleChecker<double> ());
+ 
++// NSG Level-2: exact node positions from the platform config. Passed as FILE
++// paths (shell-safe) whose contents are ";"-separated "x,y" pairs in scenario
++// coords. Empty path => fall back to the auto ring/disc layout (original).
++static ns3::GlobalValue gnb_positions_file ("gnbPositionsFile", "File of ';'-sep 'x,y' gNB positions; empty=auto ring",
++                                            ns3::StringValue (""),
++                                            ns3::MakeStringChecker ());
++static ns3::GlobalValue ue_positions_file ("uePositionsFile", "File of ';'-sep 'x,y' UE positions; empty=auto disc",
++                                           ns3::StringValue (""),
++                                           ns3::MakeStringChecker ());
++// NSG consistency: fixed RNG run => the same config reproduces the same run.
++static ns3::GlobalValue rng_run ("rngRun", "ns-3 RNG run number (fixed => reproducible)",
++                                 ns3::UintegerValue (1),
++                                 ns3::MakeUintegerChecker<uint32_t> ());
++
++// Read a whole file into a string ("" if it can't be opened / path empty).
++static std::string NsgReadFile (const std::string &fname) {
++    if (fname.empty ()) return "";
++    std::ifstream f (fname.c_str ());
++    if (!f.is_open ()) return "";
++    std::stringstream ss; ss << f.rdbuf ();
++    return ss.str ();
++}
++
++// Parse ";"-separated "x,y" pairs into ns3::Vector (z=3). Tolerant of blanks.
++static std::vector<ns3::Vector> NsgParsePositions (const std::string &s) {
++    std::vector<ns3::Vector> out;
++    std::stringstream ss (s);
++    std::string item;
++    while (std::getline (ss, item, ';')) {
++        size_t a = item.find_first_not_of (" \t\r\n");
++        if (a == std::string::npos) continue;
++        size_t b = item.find_last_not_of (" \t\r\n");
++        item = item.substr (a, b - a + 1);
++        size_t comma = item.find (',');
++        if (comma == std::string::npos) continue;
++        try {
++            double x = std::stod (item.substr (0, comma));
++            double y = std::stod (item.substr (comma + 1));
++            out.emplace_back (x, y, 3);
++        } catch (...) { }
++    }
++    return out;
++}
++
+ int
+ main(int argc, char *argv[]) {
+     // LogComponentEnableAll(LOG_PREFIX_ALL);
+@@ -443,6 +487,13 @@
+     StringValue stringValue;
+     DoubleValue doubleValue;
+ 
++    // NSG consistency: fix the RNG BEFORE any random variable is created, so the
++    // same config reproduces the same run (kills the big variance from random
++    // mobility/positions/channel). rngRun defaults to 1; vary it for multi-seed.
++    GlobalValue::GetValueByName("rngRun", uintegerValue);
++    RngSeedManager::SetSeed(1);
++    RngSeedManager::SetRun(uintegerValue.Get());
++
+     GlobalValue::GetValueByName("hoSinrDifference", doubleValue);
+     double hoSinrDifference = doubleValue.Get();
+     GlobalValue::GetValueByName("bufferSize", uintegerValue);
+@@ -579,12 +630,21 @@
+     // Center frequency in Hz
+     GlobalValue::GetValueByName ("CenterFrequency", doubleValue);
+     double centerFrequency = doubleValue.Get();
++    // NSG: keep the propagation model's frequency consistent with the config
++    // (an earlier SetDefault hardcoded 3.5e9; the last SetDefault wins).
++    Config::SetDefault("ns3::ThreeGppPropagationLossModel::Frequency", DoubleValue(centerFrequency));
+     // Distance between the mmWave BSs and the two co-located LTE and mmWave BSs in meters
+     GlobalValue::GetValueByName ("IntersideDistanceUEs", doubleValue);
+     double isd_ue = doubleValue.Get(); // (interside distance)
+     GlobalValue::GetValueByName ("IntersideDistanceCells", doubleValue);
+     double isd_cell = doubleValue.Get(); // (interside distance)
+ 
++    // NSG Level-2: exact positions from the config (empty file => auto layout).
++    GlobalValue::GetValueByName ("gnbPositionsFile", stringValue);
++    std::vector<ns3::Vector> nsgGnbPos = NsgParsePositions (NsgReadFile (stringValue.Get ()));
++    GlobalValue::GetValueByName ("uePositionsFile", stringValue);
++    std::vector<ns3::Vector> nsgUePos = NsgParsePositions (NsgReadFile (stringValue.Get ()));
++
+     // Number of antennas in each UE
+     // GlobalValue::GetValueByName ("N_AntennasMcUe", uintegerValue);
+     int numAntennasMcUe = 1; //uintegerValue.Get();
+@@ -666,17 +726,24 @@
+     // Install Mobility Model
+     Ptr <ListPositionAllocator> enbPositionAlloc = CreateObject<ListPositionAllocator>();
+ 
+-    // We want a center with one LTE enb and one mmWave co-located in the same place
+-    enbPositionAlloc->Add(centerPosition);
+-    enbPositionAlloc->Add(centerPosition);
+-    double x, y;
+-    double nConstellation = nMmWaveEnbNodes - 1;
+-
+-    // This guarantee that each of the rest BSs is placed at the same distance from the two co-located in the center
+-    for (int8_t i = 0; i < nConstellation; ++i) {
+-        x = isd_cell * cos((2 * M_PI * i) / (nConstellation));
+-        y = isd_cell * sin((2 * M_PI * i) / (nConstellation));
+-        enbPositionAlloc->Add(Vector(centerPosition.x + x, centerPosition.y + y, 3));
++    if (nsgGnbPos.size () == (size_t) nMmWaveEnbNodes) {
++        // NSG Level-2 config-driven: LTE hub at the scenario centre, each mmWave
++        // gNB at its exact configured position.
++        enbPositionAlloc->Add(centerPosition);
++        for (const auto &p : nsgGnbPos) enbPositionAlloc->Add(p);
++        std::cout << "[NSG] using " << nsgGnbPos.size () << " config gNB positions" << std::endl;
++    } else {
++        // Fallback: original auto hub-and-ring (one LTE + one mmWave co-located,
++        // the rest on a ring of radius isd_cell).
++        enbPositionAlloc->Add(centerPosition);
++        enbPositionAlloc->Add(centerPosition);
++        double x, y;
++        double nConstellation = nMmWaveEnbNodes - 1;
++        for (int8_t i = 0; i < nConstellation; ++i) {
++            x = isd_cell * cos((2 * M_PI * i) / (nConstellation));
++            y = isd_cell * sin((2 * M_PI * i) / (nConstellation));
++            enbPositionAlloc->Add(Vector(centerPosition.x + x, centerPosition.y + y, 3));
++        }
+     }
+ 
+     MobilityHelper enbmobility;
+@@ -686,19 +753,27 @@
+ 
+     MobilityHelper uemobility;
+ 
+-    Ptr <UniformDiscPositionAllocator> uePositionAlloc = CreateObject<UniformDiscPositionAllocator>();
+-
+-    uePositionAlloc->SetX(centerPosition.x);
+-    uePositionAlloc->SetY(centerPosition.y);
+-    uePositionAlloc->SetRho(isd_ue);
+     Ptr <UniformRandomVariable> speed = CreateObject<UniformRandomVariable>();
+     speed->SetAttribute("Min", DoubleValue(2.0));
+     speed->SetAttribute("Max", DoubleValue(4.0));
+-
+     uemobility.SetMobilityModel("ns3::RandomWalk2dOutdoorMobilityModel", "Speed",
+                                 PointerValue(speed), "Bounds",
+                                 RectangleValue(Rectangle(0, maxXAxis, 0, maxYAxis)));
+-    uemobility.SetPositionAllocator(uePositionAlloc);
++
++    if (nsgUePos.size () == ueNodes.GetN ()) {
++        // NSG Level-2 config-driven: each UE starts at its configured position.
++        Ptr <ListPositionAllocator> ueListAlloc = CreateObject<ListPositionAllocator>();
++        for (const auto &p : nsgUePos) ueListAlloc->Add(p);
++        uemobility.SetPositionAllocator(ueListAlloc);
++        std::cout << "[NSG] using " << nsgUePos.size () << " config UE positions" << std::endl;
++    } else {
++        // Fallback: original uniform disc around the centre.
++        Ptr <UniformDiscPositionAllocator> uePositionAlloc = CreateObject<UniformDiscPositionAllocator>();
++        uePositionAlloc->SetX(centerPosition.x);
++        uePositionAlloc->SetY(centerPosition.y);
++        uePositionAlloc->SetRho(isd_ue);
++        uemobility.SetPositionAllocator(uePositionAlloc);
++    }
+     uemobility.Install(ueNodes);
+ 
+     // Install mmWave, lte, mc Devices to the nodesnumAntennasMmWave

@@ -1,0 +1,91 @@
+# FlexRIC kpm_rc xApp: the KPM collection window was a hardcoded sleep(5), and
+# that was the platform's UE ceiling.
+#
+# The one-shot path is sleep(1) -> subscribe -> sleep(5) -> RC -> stop, so five
+# WALL seconds is all the time a batch run has to collect indications. But
+# indications arrive once per reporting period of SIMULATED time, and a heavy
+# scenario advances slowly: measured 2026-09-13 at 3 cells / 72 UEs, five seconds
+# bought 0.1 simulated seconds — zero complete E2 rounds, only the two startup
+# indications — and the platform classified that `partial` and read it as a
+# density limit. Every UE ceiling ever recorded (150 -> 75 -> 72 -> 66 -> 60) was
+# this sleep.
+#
+# Measured with the window sized to the scenario (nsg-engine:1.12):
+#     72 UEs   3 of 3 ok   82 names, 11 indications
+#    150 UEs   3 of 3 ok   156-182 names, 17-20 indications
+#
+# The one-shot RC below is deliberately kept: bridge mode (NSG_CTRL_FIFO) would
+# have been a smaller change but it skips the control phase, and the batch result
+# carries rc_control.closed_loop.
+#
+# run_scenario.sh sizes it from the UE count (N_UE*8/5, clamped 10..180) and
+# engine_service._script_budget carries the matching term, so a heavy scenario is
+# not killed mid-collection.
+#
+# ── THE WINDOW IS ALSO THE RUN'S SIMULATED HORIZON (measured 2026-09-13) ──
+# The window buys simulated time LINEARLY, with no diminishing return. Bare
+# 3 cells / 6 UEs, windows of 10 / 30 / 60 / 120 s gave spans of 4.1 / 5.8 / 9.2 /
+# 13.9 simulated seconds — a flat ~0.10 s per wall second throughout. On the
+# product path the rate is ~4x lower and just as linear (1.1 s at the automatic
+# window, 3.6 s at 120 s, indications 11 -> 44).
+#
+# That is the difference between a snapshot and a story: with 120 s a cell_outage
+# at start_s=2.0 FIRED for the first time (target cell 4841 J against 9840 J
+# unfaulted, neighbours picking up the load), where at the automatic window the
+# identical request came back matching the no-fault run and PASSED. It is the
+# only lever that gets a batch run past a sub-second horizon.
+#
+# So from nsg-engine:1.13 an EXPLICIT NSG_KPM_COLLECT_SECS may go far past the
+# auto sizing, with `settings.kpm_collect_s` carrying it from the platform. The
+# auto path keeps its 180 s cap so nothing accidentally runs for a quarter of an
+# hour. What this needed was NS3_TIMEOUT, the service budget and the backend's
+# HTTP timeout all following the window, since each of them would otherwise kill
+# exactly the long-horizon runs it enables.
+#
+# 1.15 raises the explicit ceiling to 14400 s (4 h) and lifts the `collect > 3600`
+# clamp below to a sanity bound of 172800. That clamp was a HIDDEN SECOND CEILING:
+# with the shell allowing 900 it never showed, but any shell asking for more than
+# an hour would have got an hour and said nothing about it. Two caps for one thing
+# means the lower one silently wins, so the policy now lives only in
+# run_scenario.sh — and 4 h is a statement about the SHAPE of the batch path (one
+# blocking request, one salvage point at the end), not about the engine. Longer
+# than that belongs on the live path until a batch run streams its KPM out as it
+# arrives.
+#
+# Apply in the engine distro:
+#   cd /root/nsoran/flexric && patch -p1 < this
+#   cd build && cmake --build . --target xapp_kpm_rc -- -j6
+--- a/examples/xApp/c/kpm_rc/xapp_kpm_rc.c
++++ b/examples/xApp/c/kpm_rc/xapp_kpm_rc.c
+@@ -804,7 +804,25 @@
+   // END KPM
+   ////////////
+ 
+-  sleep(5);
++  // NSG: this sleep IS the batch path's KPM collection window, and at 5 seconds
++  // it was the platform's UE ceiling. Indications arrive once per reporting
++  // period of SIMULATED time, and a heavy scenario advances slowly: measured
++  // 2026-09-13 at 3 cells / 72 UEs, five seconds bought 0.1 simulated seconds
++  // and zero complete E2 rounds, so the run reported only the two startup
++  // indications and the platform read it as an engine limit. With 120 s the
++  // identical config returns 86 KPM names, 11 indications and full DU metrics.
++  // Configurable so a caller can pay wall time for a heavy scenario without
++  // giving up the one-shot RC below (bridge mode skips it, and the batch result
++  // carries rc_control.closed_loop).
++  {
++    const char* secs = getenv("NSG_KPM_COLLECT_SECS");
++    long collect = secs ? atol(secs) : 5;
++    if (collect < 1) collect = 1;
++    // Ceiling high enough never to bind: the POLICY cap lives in
++    // run_scenario.sh (and settings.kpm_collect_s above it), and two caps
++    // for one thing means the lower one silently wins. 3600 here was that
++    // hidden second ceiling — a shell asking for more than an hour got an
++    // hour and said nothing.
++    if (collect > 172800) collect = 172800;   // 2 days, a sanity bound only
++    printf("[NSG] KPM collection window %ld s\n", collect);
++    fflush(stdout);
++    sleep((unsigned)collect);
++  }
+ 
+   ////////////
+   // START RC — one-shot (default) OR live bridge when NSG_CTRL_FIFO is set

@@ -1,0 +1,74 @@
+# NSG spike — can 5G-LENA `nr` talk to our RIC? Partly, and now we know the cost.
+#
+# Ran before committing weeks to an nr engine profile. The premise under test:
+# the nr module is the route to TDD slot patterns, MIMO/rank, carrier
+# aggregation, per-cell carriers and real UL — all of which the mmWave module
+# structurally cannot express — and its E2 scaffolding looked already wired.
+#
+# Changes live in the ns-3 tree (Ubuntu-2004-nsoran), not in this repo:
+#   src/nr/model/nr-gnb-net-device.{h,cc}
+#   src/nr/model/nr-gnb-rrc.h
+#   src/nr/helper/nr-helper.cc
+#   scratch/orange-rf-channel-reconfiguration.cc
+# Reproduce with /root/nsoran/nr_kpm_spike.sh in that distro.
+#
+# ── ANSWERED: nr establishes a real E2 association ─────────────────────────
+# Scenario log, verbatim:
+#     [SCTP] Binding client socket with source port 38471
+#     [SCTP] Connecting to server at 127.0.0.1:36421 ...
+#     [SCTP] Connection established
+#     [SCTP] Sent E2-SETUP-REQUEST
+#     [E2AP] Received SETUP-RESPONSE-SUCCESS
+# and the RIC counted the node (E2 SETUP-REQUESTs: 0 -> 1). So an nr gNB CAN be
+# an E2 node on the same FlexRIC the mmWave engine uses, with the same service
+# models loaded. The premise holds at the association layer.
+#
+# ── NOT ANSWERED: no KPM indication observed yet ───────────────────────────
+# The run aborts before the xApp subscribes, so BuildAndSendReportMessage has
+# never actually fired. The spike de-risked the connection, not the payload.
+#
+# ── Three upstream defects found and fixed to get that far ─────────────────
+# 1. `BuildAndSendReportMessage` DID NOT EXIST. KpmSubscriptionCallback carried
+#    `//BuildAndSendReportMessage (params);` — a commented-out call to a
+#    function nobody ever wrote. Implemented minimally here: a CU-CP indication
+#    carrying the active-UE count, built with MmWaveIndicationMessageHelper,
+#    which lives in contrib/oran-interface and NOT in the mmwave module, so nr
+#    can use it without depending on mmwave. NrGnbRrc also needed a public
+#    GetNumberOfUes() — m_ueMap was private with no accessor, so the E2 layer
+#    had no way to count UEs.
+# 2. `E2Termination::Start` WAS NEVER CALLED. NrHelper creates the termination
+#    and attaches it as an attribute; nothing ever started it, so the object
+#    existed, the callbacks were registered, and no SCTP association was opened.
+#    The RIC therefore saw zero E2 nodes — and its own xApp path asserts on an
+#    empty node list ("No global node conected??"), taking the RIC down. mmWave
+#    schedules this in its DoInitialize; nr now does too.
+# 3. THE SCENARIO TIED THE TWO E2 SWITCHES TOGETHER.
+#    orange-rf-channel-reconfiguration.cc had `e2nrEnabled = enableE2FileLogging;`
+#    — opposite switches. File logging ON: the device writes CSV and never sends
+#    an indication. File logging OFF: that line also turned E2ModeNr off, so no
+#    E2Termination was created at all. E2 was unreachable in BOTH directions,
+#    which is why nobody noticed the path was hollow.
+#
+# ── One defect still open, and it is the next thing to fix ─────────────────
+# With more than one gNB the run dies at +0.016 s:
+#     [SCTP] Connection error: Cannot assign requested address
+#     NS_ASSERT failed, cond="m_ptr", "Attempted to dereference zero pointer"
+# Only ONE device logged "starting E2 termination", so the others reach
+# DoInitialize with a null m_e2term — an ordering problem between NrHelper
+# setting the attribute and the device initialising, not just a port clash.
+# (The local port WAS also wrong — m_e2localPort + cellId collides when several
+# devices share a cellId, as the multi-bandwidth-part scenarios do. Changed to a
+# per-device counter. That was not the cause; it is still a latent bug.)
+#
+# ── Read on the cost, now evidence-based rather than a source read ─────────
+# Cheaper than feared on the connection side: E2 association, service-model
+# registration and subscription handling all work, and the message builders are
+# shared contrib code rather than mmwave-private. More expensive than feared on
+# the maturity side: three separate never-finished pieces in one path, plus a
+# multi-gNB crash, before a single indication exists. Budget the nr profile as
+# "finish someone else's half-written integration", not "wire up a working
+# module".
+#
+# The order that follows from this: fix the multi-gNB E2 setup, see one
+# indication end to end, THEN port the DU/CU-UP metrics from
+# mmwave-enb-net-device.cc, THEN decide about the energy model (nr has none).

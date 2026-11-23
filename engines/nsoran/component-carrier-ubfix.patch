@@ -1,0 +1,24 @@
+--- a/src/lte/model/component-carrier.cc
++++ b/src/lte/model/component-carrier.cc
+@@ -94,7 +94,20 @@
+ }
+ 
+ ComponentCarrier::ComponentCarrier()
+-    : m_isConstructed(false)
++    // NSG: every member initialised, not just m_isConstructed. Reading an
++    // uninitialised bool is undefined behaviour, and GetCsgIndication() /
++    // IsPrimary() did exactly that until a setter or the attribute system
++    // happened to run. UBSan halted the scenario at t=0 on this, which is what
++    // made the sanitizer unusable for the density-crash hunt.
++    // Order matches the declaration order in the header.
++    : m_dlBandwidth(0),
++      m_ulBandwidth(0),
++      m_dlEarfcn(0),
++      m_ulEarfcn(0),
++      m_csgId(0),
++      m_csgIndication(false),
++      m_primaryCarrier(false),
++      m_isConstructed(false)
+ {
+     NS_LOG_FUNCTION(this);
+ }

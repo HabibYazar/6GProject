@@ -1,0 +1,39 @@
+--- a/contrib/oran-interface/model/kpm-indication.cc
++++ b/contrib/oran-interface/model/kpm-indication.cc
+@@ -837,11 +837,23 @@
+           updateNeighMsg (measurmentType, IMSI, *(_measResultListNR->list.array[i]->physCellId));
+           continue;
+         }
+-      MeasurementRecordItem_t *measure_record_item2 =
+-          (MeasurementRecordItem_t *) calloc (1, sizeof (MeasurementRecordItem_t));
+-      measure_record_item2->present = MeasurementRecordItem_PR_integer;
+-      measure_record_item2->choice.integer = *(_measResultListNR->list.array[i]->physCellId);
+-
++      // NSG: the neighbour cell id used to be emitted here as a SECOND record
++      // with no name of its own. The engine lists each neighbour twice - once
++      // with a negative id, which only triggers updateNeighMsg to register the
++      // NAME, and once with a positive id to carry the value - so this loop
++      // produced one name and TWO records per neighbour. The xApp pairs
++      // measInfoList[i] with measRecord[i], so every extra unnamed record
++      // shifted everything after it: DRB.EstabSucc.5QI, which is
++      // GetDrbMap().size() and unsigned by construction, arrived as -4, -6 and
++      // -7 (neighbour SINR in dB), and DRB.RelActNbr.5QI as 2 and 4 (cell ids).
++      // The cell ids printed through the xApp INTEGER path while the genuine
++      // counters printed through its REAL path, which is how the shift showed.
++      //
++      // Dropped rather than given a name, matching what the SERVING branch above
++      // already does: it comments out its two integer records and keeps only the
++      // SINR, so names and records stay 1:1. Nothing is lost - the cell id is
++      // already carried in the metric NAME
++      // (L3neighSINRListOf_UEID_x_of_Cell_N).
+       MeasurementRecordItem_t *measure_record_item =
+           (MeasurementRecordItem_t *) calloc (1, sizeof (MeasurementRecordItem_t));
+ 
+@@ -852,7 +864,6 @@
+ 
+       // Stream measurement records to list.
+       ASN_SEQUENCE_ADD (&measure_record->list, measure_record_item);
+-      ASN_SEQUENCE_ADD (&measure_record->list, measure_record_item2);
+     }
+ 
+   measure_data_item->measRecord = *measure_record;

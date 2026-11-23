@@ -1,0 +1,301 @@
+{
+ "anomalies_configured": 1,
+ "anomalies_fired": 0,
+ "anomaly_events": [],
+ "dl_mbps_max": 34.14,
+ "dl_mbps_mean": 14.93,
+ "energy_final": {
+  "per_cell": {
+   "2": {
+    "j": 68.0,
+    "w": 680.4
+   },
+   "3": {
+    "j": 68.0,
+    "w": 680.4
+   },
+   "4": {
+    "j": 68.0,
+    "w": 680.4
+   },
+   "5": {
+    "j": 68.0,
+    "w": 680.4
+   }
+  },
+  "total_w": 2721.6
+ },
+ "handovers_total": 0,
+ "measurements": {
+  "CARR.PDSCHMCSDist.Bin1": {
+   "max": 46.0,
+   "mean": 24.5,
+   "min": 3.0,
+   "ticks": 2
+  },
+  "CARR.PDSCHMCSDist.Bin2": {
+   "max": 15.0,
+   "mean": 7.5,
+   "min": 0.0,
+   "ticks": 2
+  },
+  "CARR.PDSCHMCSDist.Bin3": {
+   "max": 2.0,
+   "mean": 1.0,
+   "min": 0.0,
+   "ticks": 2
+  },
+  "CARR.PDSCHMCSDist.Bin4": {
+   "max": 23.0,
+   "mean": 11.5,
+   "min": 0.0,
+   "ticks": 2
+  },
+  "CARR.PDSCHMCSDist.Bin5": {
+   "max": 101.5,
+   "mean": 96.25,
+   "min": 91.0,
+   "ticks": 2
+  },
+  "CARR.PDSCHMCSDist.Bin6": {
+   "max": 119.0,
+   "mean": 59.5,
+   "min": 0.0,
+   "ticks": 2
+  },
+  "DRB.BufferSize.Qos": {
+   "max": 81235.0,
+   "mean": 40617.5,
+   "min": 0.0,
+   "ticks": 2
+  },
+  "DRB.EstabSucc.5QI": {
+   "max": 9.0,
+   "mean": 1.17,
+   "min": -5.0,
+   "ticks": 5
+  },
+  "DRB.PdcpPduNbrDl.Qos": {
+   "max": 158.0,
+   "mean": 158.0,
+   "min": 158.0,
+   "ticks": 4
+  },
+  "DRB.PdcpSduBitRateDl": {
+   "max": 0.0,
+   "mean": 0.0,
+   "min": 0.0,
+   "ticks": 1
+  },
+  "DRB.PdcpSduBitRateUl": {
+   "max": 1006.0,
+   "mean": 695.25,
+   "min": 251.0,
+   "ticks": 4
+  },
+  "DRB.PdcpSduDelayDl": {
+   "max": 0.0,
+   "mean": 0.0,
+   "min": 0.0,
+   "ticks": 1
+  },
+  "DRB.PdcpSduDelayUl": {
+   "max": 68.67,
+   "mean": 36.46,
+   "min": 24.5,
+   "ticks": 4
+  },
+  "DRB.PdcpSduVolumeDl": {
+   "max": 0.0,
+   "mean": 0.0,
+   "min": 0.0,
+   "ticks": 1
+  },
+  "DRB.PdcpSduVolumeUl": {
+   "max": 503.0,
+   "mean": 347.42,
+   "min": 125.0,
+   "ticks": 4
+  },
+  "DRB.RelActNbr.5QI": {
+   "max": 2.5,
+   "mean": 1.53,
+   "min": 0.0,
+   "ticks": 5
+  },
+  "DRB.UEThpDl": {
+   "max": 12823.0,
+   "mean": 10659.5,
+   "min": 8496.0,
+   "ticks": 2
+  },
+  "HO.TrgtCellQual.RS-SINR": {
+   "max": 3.0,
+   "mean": 3.0,
+   "min": 3.0,
+   "ticks": 1
+  },
+  "L1M.RS-SINR.Bin127": {
+   "max": 98.5,
+   "mean": 49.25,
+   "min": 0.0,
+   "ticks": 2
+  },
+  "L1M.RS-SINR.Bin34": {
+   "max": 81.0,
+   "mean": 40.5,
+   "min": 0.0,
+   "ticks": 2
+  },
+  "L1M.RS-SINR.Bin46": {
+   "max": 24.0,
+   "mean": 12.0,
+   "min": 0.0,
+   "ticks": 2
+  },
+  "L1M.RS-SINR.Bin58": {
+   "max": 8.0,
+   "mean": 4.0,
+   "min": 0.0,
+   "ticks": 2
+  },
+  "L1M.RS-SINR.Bin70": {
+   "max": 11.0,
+   "mean": 5.5,
+   "min": 0.0,
+   "ticks": 2
+  },
+  "L1M.RS-SINR.Bin82": {
+   "max": 43.0,
+   "mean": 41.75,
+   "min": 40.5,
+   "ticks": 2
+  },
+  "L1M.RS-SINR.Bin94": {
+   "max": 84.5,
+   "mean": 47.25,
+   "min": 10.0,
+   "ticks": 2
+  },
+  "L3neighSINRListOf_UEID_00001_of_Cell_3": {
+   "max": 2.0,
+   "mean": 2.0,
+   "min": 2.0,
+   "ticks": 1
+  },
+  "L3neighSINRListOf_UEID_00003_of_Cell_3": {
+   "max": 2.0,
+   "mean": 2.0,
+   "min": 2.0,
+   "ticks": 1
+  },
+  "L3neighSINRListOf_UEID_00004_of_Cell_4": {
+   "max": 5.0,
+   "mean": 5.0,
+   "min": 5.0,
+   "ticks": 1
+  },
+  "L3neighSINRListOf_UEID_00005_of_Cell_4": {
+   "max": 2.0,
+   "mean": 2.0,
+   "min": 2.0,
+   "ticks": 1
+  },
+  "L3neighSINRListOf_UEID_00006_of_Cell_4": {
+   "max": 5.0,
+   "mean": 5.0,
+   "min": 5.0,
+   "ticks": 1
+  },
+  "L3neighSINRListOf_UEID_00007_of_Cell_5": {
+   "max": 2.0,
+   "mean": 2.0,
+   "min": 2.0,
+   "ticks": 1
+  },
+  "L3neighSINRListOf_UEID_00008_of_Cell_5": {
+   "max": 3.0,
+   "mean": 3.0,
+   "min": 3.0,
+   "ticks": 1
+  },
+  "L3neighSINRListOf_UEID_00009_of_Cell_5": {
+   "max": 2.0,
+   "mean": 2.0,
+   "min": 2.0,
+   "ticks": 1
+  },
+  "L3servingSINR": {
+   "max": 6.17,
+   "mean": 4.38,
+   "min": 1.83,
+   "ticks": 4
+  },
+  "QosFlow.PdcpPduVolumeDL": {
+   "max": 349819.0,
+   "mean": 110154.42,
+   "min": 1807.0,
+   "ticks": 6
+  },
+  "RRU.PrbUsedDl": {
+   "max": 20.0,
+   "mean": 14.5,
+   "min": 9.0,
+   "ticks": 2
+  },
+  "TB.ErrTotalNbrDl.1": {
+   "max": 104.0,
+   "mean": 74.0,
+   "min": 44.0,
+   "ticks": 2
+  },
+  "TB.TotNbrDl.1": {
+   "max": 223.5,
+   "mean": 200.25,
+   "min": 177.0,
+   "ticks": 2
+  },
+  "TB.TotNbrDlInitial": {
+   "max": 179.5,
+   "mean": 126.25,
+   "min": 73.0,
+   "ticks": 2
+  },
+  "TB.TotNbrDlInitial.16Qam": {
+   "max": 14.0,
+   "mean": 7.0,
+   "min": 0.0,
+   "ticks": 2
+  },
+  "TB.TotNbrDlInitial.64Qam": {
+   "max": 220.5,
+   "mean": 161.25,
+   "min": 102.0,
+   "ticks": 2
+  },
+  "TB.TotNbrDlInitial.Qpsk": {
+   "max": 61.0,
+   "mean": 32.0,
+   "min": 3.0,
+   "ticks": 2
+  },
+  "Tot.PdcpSduNbrDl": {
+   "max": 0.0,
+   "mean": 0.0,
+   "min": 0.0,
+   "ticks": 1
+  }
+ },
+ "slices": {
+  "eMBB": {
+   "max_mbps": 34.14,
+   "mean_mbps": 9.94
+  }
+ },
+ "tick_range": [
+  1,
+  12
+ ],
+ "ticks": 12,
+ "ue_count_mean": 2.6
+}

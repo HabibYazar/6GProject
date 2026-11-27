@@ -48,7 +48,9 @@ import requests
 from openai import APIError
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, ValidationError
 
 import ns3_bridge
@@ -108,6 +110,77 @@ app = FastAPI(
     description="AI-driven NS-3 Network Simulation API",
     lifespan=lifespan,
 )
+
+
+# Central API error handling. Keep FastAPI's existing "detail" contract.
+_API_ERROR_CODES = {
+    400: "bad_request",
+    401: "unauthorized",
+    403: "forbidden",
+    404: "not_found",
+    409: "conflict",
+    422: "validation_error",
+    429: "rate_limited",
+    500: "internal_error",
+    502: "upstream_error",
+    503: "service_unavailable",
+    504: "gateway_timeout",
+}
+
+_PUBLIC_SERVER_ERRORS = {
+    500: "Internal server error.",
+    502: "Upstream service failed.",
+    503: "Service temporarily unavailable.",
+    504: "Upstream service timed out.",
+}
+
+
+@app.exception_handler(StarletteHTTPException)
+async def api_http_exception(request: Request, exc: StarletteHTTPException):
+    status = exc.status_code
+    if status >= 500:
+        logger.warning(
+            "HTTP %s on %s %s: %s",
+            status, request.method, request.url.path, exc.detail
+        )
+    detail = (
+        _PUBLIC_SERVER_ERRORS.get(status, "Server error.")
+        if status >= 500 else exc.detail
+    )
+    return JSONResponse(
+        status_code=status,
+        content={
+            "detail": detail,
+            "code": _API_ERROR_CODES.get(status, f"http_{status}"),
+        },
+        headers=exc.headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def api_validation_exception(request: Request, exc: RequestValidationError):
+    errors = [
+        {k: v for k, v in error.items() if k not in ("input", "ctx")}
+        for error in exc.errors()
+    ]
+    return JSONResponse(
+        status_code=422,
+        content={"detail": errors, "code": "validation_error"},
+    )
+
+
+@app.exception_handler(Exception)
+async def api_unhandled_exception(request: Request, exc: Exception):
+    logger.error(
+        "Unhandled API error on %s %s",
+        request.method, request.url.path,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error.", "code": "internal_error"},
+    )
+
 
 # Explicit origins, not "*". The wildcard is invalid together with
 # allow_credentials (the browser rejects the pair), and once auth ships the

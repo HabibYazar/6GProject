@@ -50,9 +50,14 @@ def _load_env_file(path: str) -> None:
 
 _load_env_file(os.path.join(os.path.dirname(__file__), ".env"))
 
-_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-if not _API_KEY:
-    raise RuntimeError("OPENROUTER_API_KEY is not set — add it to nsg_ai/.env or the environment")
+_API_KEY = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+
+class AIUnavailableError(RuntimeError):
+    pass
+
+def ai_configured() -> bool:
+    return bool(_API_KEY)
+
 _BASE_URL = "https://openrouter.ai/api/v1"
 
 # Both models are overridable so a run can be pinned or rolled back without an
@@ -65,7 +70,7 @@ _text_llm = ChatOpenAI(
     max_tokens=1000,
     api_key=_API_KEY,
     base_url=_BASE_URL,
-)
+) if _API_KEY else None
 
 # Plain LLM — no with_structured_output. We parse the JSON response ourselves.
 #
@@ -87,7 +92,7 @@ _config_llm = ChatOpenAI(
     max_tokens=8000,
     api_key=_API_KEY,
     base_url=_BASE_URL,
-)
+) if _API_KEY else None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -317,7 +322,7 @@ _MODIFY_PROMPT = ChatPromptTemplate.from_messages([
      "Modification request: {user_prompt}"),
 ])
 
-_MODIFY_CHAIN = _MODIFY_PROMPT | _config_llm
+_MODIFY_CHAIN = _MODIFY_PROMPT | _config_llm if _config_llm is not None else None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -355,6 +360,8 @@ def modify_configuration(
     Retries once if the LLM output fails Pydantic validation, feeding the
     error details back so the model can self-correct.
     """
+    if _MODIFY_CHAIN is None:
+        raise AIUnavailableError("AI service is not configured")
     lc_history: list[HumanMessage | AIMessage] = []
     if history:
         for turn in history:
@@ -408,6 +415,8 @@ def modify_configuration(
 
 def generate_text(prompt: str) -> str:
     """Free-form text generation — used for report analysis and summaries."""
+    if _text_llm is None:
+        raise AIUnavailableError("AI service is not configured")
     response = _text_llm.invoke(prompt)
     return response.content.strip()
 
@@ -468,7 +477,7 @@ _XAPP_PROMPT = ChatPromptTemplate.from_messages([
      "Current KPM report:\n{kpm}\n\n"
      "Return the JSON array of control actions for this step."),
 ])
-_XAPP_CHAIN = _XAPP_PROMPT | _text_llm
+_XAPP_CHAIN = _XAPP_PROMPT | _text_llm if _text_llm is not None else None
 
 
 def _cell_state(c: dict) -> str:
@@ -544,6 +553,8 @@ def decide_xapp_actions(
         )
         chain = _XAPP_PROMPT | llm
     else:
+        if _XAPP_CHAIN is None:
+            return []
         chain = _XAPP_CHAIN  # built-in model
 
     try:

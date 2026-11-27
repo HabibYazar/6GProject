@@ -45,9 +45,12 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from openai import APIError
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, ValidationError
 
 import ns3_bridge
@@ -57,7 +60,7 @@ import partition_advice
 import partition_run
 import partition_live
 import partition_pool
-from llm_agent import NSGAgent, decide_xapp_actions
+from llm_agent import NSGAgent, decide_xapp_actions, AIUnavailableError, ai_configured
 from ric_session import RicSessionManager
 from nsoran_live import (run_live_proxy, run_live_traffic,
                          run_batch_simulation, summarise_batch_frames)
@@ -107,6 +110,77 @@ app = FastAPI(
     description="AI-driven NS-3 Network Simulation API",
     lifespan=lifespan,
 )
+
+
+# Central API error handling. Keep FastAPI's existing "detail" contract.
+_API_ERROR_CODES = {
+    400: "bad_request",
+    401: "unauthorized",
+    403: "forbidden",
+    404: "not_found",
+    409: "conflict",
+    422: "validation_error",
+    429: "rate_limited",
+    500: "internal_error",
+    502: "upstream_error",
+    503: "service_unavailable",
+    504: "gateway_timeout",
+}
+
+_PUBLIC_SERVER_ERRORS = {
+    500: "Internal server error.",
+    502: "Upstream service failed.",
+    503: "Service temporarily unavailable.",
+    504: "Upstream service timed out.",
+}
+
+
+@app.exception_handler(StarletteHTTPException)
+async def api_http_exception(request: Request, exc: StarletteHTTPException):
+    status = exc.status_code
+    if status >= 500:
+        logger.warning(
+            "HTTP %s on %s %s: %s",
+            status, request.method, request.url.path, exc.detail
+        )
+    detail = (
+        _PUBLIC_SERVER_ERRORS.get(status, "Server error.")
+        if status >= 500 else exc.detail
+    )
+    return JSONResponse(
+        status_code=status,
+        content={
+            "detail": detail,
+            "code": _API_ERROR_CODES.get(status, f"http_{status}"),
+        },
+        headers=exc.headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def api_validation_exception(request: Request, exc: RequestValidationError):
+    errors = [
+        {k: v for k, v in error.items() if k not in ("input", "ctx")}
+        for error in exc.errors()
+    ]
+    return JSONResponse(
+        status_code=422,
+        content={"detail": errors, "code": "validation_error"},
+    )
+
+
+@app.exception_handler(Exception)
+async def api_unhandled_exception(request: Request, exc: Exception):
+    logger.error(
+        "Unhandled API error on %s %s",
+        request.method, request.url.path,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error.", "code": "internal_error"},
+    )
+
 
 # Explicit origins, not "*". The wildcard is invalid together with
 # allow_credentials (the browser rejects the pair), and once auth ships the
@@ -553,9 +627,12 @@ def ai_modify(request: ModifyConfigRequest, response: Response,
                 "errors": json.loads(exc.json()),
             },
         )
-    except Exception as exc:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(exc))
+    except (AIUnavailableError, APIError):
+        logger.warning("AI service unavailable", exc_info=True)
+        raise HTTPException(status_code=503, detail="AI service unavailable")
+    except Exception:
+        logger.exception("AI configuration failed")
+        raise HTTPException(status_code=500, detail="AI request failed")
 
 
 @app.post("/ai/interactions/{interaction_id}/outcome")
@@ -3222,6 +3299,18 @@ async def ws_e2(websocket: WebSocket) -> None:
                 if spec.get("enabled"):
                     goal = str(spec.get("goal") or "keep QoS high and save energy where possible")
                     llm_config = spec.get("llm")  # optional: user's own model
+                    has_override = bool(
+                        isinstance(llm_config, dict)
+                        and llm_config.get("model")
+                        and llm_config.get("api_key")
+                    )
+                    if not ai_configured() and not has_override:
+                        await websocket.send_json({
+                            "type": "ai_status",
+                            "running": False,
+                            "error": "AI service unavailable",
+                        })
+                        continue
                     session.start_ai(goal, decide_xapp_actions, llm_config)
                     using = (llm_config or {}).get("model") or "built-in"
                     await session.broadcast({"type": "ai_status", "running": True, "goal": goal, "model": using})
@@ -3521,8 +3610,12 @@ def generate_report(metrics: ReportMetrics) -> dict:
     try:
         report = _agent.generate_text(prompt)
         return {"status": "success", "report": report}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    except (AIUnavailableError, APIError):
+        logger.warning("AI service unavailable", exc_info=True)
+        raise HTTPException(status_code=503, detail="AI service unavailable")
+    except Exception:
+        logger.exception("AI report failed")
+        raise HTTPException(status_code=500, detail="Report generation failed")
 
 
 @app.get("/envelope")
@@ -3650,6 +3743,14 @@ def reset_agent() -> dict:
 #
 # Everything else on this file carries require_user. The audit that found the gap
 # is a route-by-route scan; re-run it after adding an endpoint.
+@app.get("/ai/status", dependencies=[Depends(require_user)])
+def ai_status() -> dict:
+    configured = ai_configured()
+    return {
+        "configured": configured,
+        "status": "configured" if configured else "unconfigured",
+    }
+
 @app.get("/health")
 def health() -> dict:
     """Liveness probe for container orchestration."""

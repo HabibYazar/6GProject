@@ -63,7 +63,12 @@ export default function LoginPage() {
       }
       router.replace("/")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign in failed")
+      const message = err instanceof Error ? err.message : "Sign in failed"
+      setError(
+        /failed to fetch|networkerror|fetch failed/i.test(message)
+          ? "Cannot reach the backend."
+          : message
+      )
       setBusy(false)
     }
   }

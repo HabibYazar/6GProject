@@ -2599,6 +2599,7 @@ async def _campaign_run_one(campaign_id: str, record: dict, spec: CampaignSpec,
             "requested": {k: params.get(k) for k in ("n_gnb", "n_ue", "freq_hz", "bw_hz")},
             "frames_target": planned.frames, "n_frames": 0,
             "campaign_id": campaign_id,
+            "owner_id": record.get("owner_id"),
         }
         # Persist the run row NOW, not when it finishes. campaign_runs.run_id is
         # a foreign key into runs, and with concurrent runs a campaign save
@@ -2650,7 +2651,7 @@ async def _campaign_run_one(campaign_id: str, record: dict, spec: CampaignSpec,
         # separate from the busy loop above and deliberately not a loop: this
         # retries a crash, and a configuration that crashes every time must still
         # be reported as an error rather than retried until the campaign gives up.
-        if _bench_failure(_SIM_RUNS[run_id]):
+        if tier != "fast" and _bench_failure(_SIM_RUNS[run_id]):
             logger.warning("campaign %s: %s produced no frames (%s) — retrying "
                            "once; this is a bench failure, not a scenario result",
                            campaign_id, planned.label,
@@ -2771,6 +2772,9 @@ async def _campaign_job(campaign_id: str, spec: CampaignSpec) -> None:
         # half-torn-down session and the next campaign meets [BUSY].
         if record.get("stop_requested"):
             record["runs"][slot]["status"] = "stopped"
+            return
+        if spec.tier == "fast":
+            await _campaign_run_one(campaign_id, record, spec, planned, slot, None)
             return
         if groups > 1:
             await _campaign_run_one(campaign_id, record, spec, planned, slot, None)

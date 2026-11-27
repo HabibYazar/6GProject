@@ -284,6 +284,56 @@ def _read(path: str, tail_bytes: int | None = None) -> str:
         return ""
 
 
+def _ue_visibility(scn: str, params: dict, kpm_reported: int) -> dict:
+    """Report configured, observed, LTE, mmWave and KPM-visible UEs separately."""
+    last = {}
+
+    pattern = (
+        r"Position of UE with IMSI\s+(\d+)\s+is\s+[^\r\n]*?\s+at time\s+"
+        r"([\d.]+),\s*UE connected to Cell:\s*(\d+)"
+    )
+
+    for m in re.finditer(pattern, scn):
+        imsi = int(m.group(1))
+        timestamp = float(m.group(2))
+        cell = int(m.group(3))
+
+        if imsi not in last or timestamp >= last[imsi][0]:
+            last[imsi] = (timestamp, cell)
+
+    mmwave_cells = {
+        int(m.group(1))
+        for m in re.finditer(
+            r"Total energy consumption for mmWave cell (\d+):",
+            scn
+        )
+    }
+
+    try:
+        raw = params.get("n_ue")
+        requested = int(raw) if raw is not None else 3
+    except (ValueError, TypeError):
+        requested = None
+
+    lte = None
+    mmwave = None
+
+    if last and mmwave_cells:
+        mmwave = sum(
+            1 for _, cell in last.values()
+            if cell in mmwave_cells
+        )
+        lte = len(last) - mmwave
+
+    return {
+        "requested_ues": requested,
+        "observed_ues": len(last) if last else None,
+        "lte_ues": lte,
+        "mmwave_ues": mmwave,
+        "kpm_reported_ues": kpm_reported,
+    }
+
+
 def _classify(measurements: dict, crash, truncated: bool = False) -> tuple:
     """
     Honest run status, plus WHAT ENDED THE RUN — which is a different question
@@ -607,7 +657,9 @@ def _parse_logs(sim_time: int, params: dict, out: str,
         "requested": {k: params.get(k) for k in _ECHO_KEYS},  # config-derived knobs
         "e2_agents": agents,          # gNBs that completed the E2 SETUP handshake
         "kpm_indications": indications,  # E2SM-KPM indication messages received
-        "ue_count": len(ue_ids),
+        "ue_count": len(ue_ids),  # legacy KPM-visible count
+        **_ue_visibility(scn, params, len(ue_ids)),
+        "ue_observation_scope": "recent_log_tail" if live else "full_run_log",
         "handovers": handovers,          # HOs observed in the sampled KPM (NGAP id churn)
         "measurements": measurements,    # real per-UE KPM values (E2SM-KPM v3)
         "derived": derived,              # BLER %, 64QAM share % (from TB counters)

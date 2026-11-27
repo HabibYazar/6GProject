@@ -2834,6 +2834,7 @@ async def campaign_create(spec: CampaignSpec,
         "created_at": _now_iso(),
         "finished_at": None,
         "base_seed": spec.base_seed,
+        "tier": spec.tier,
         # THE SHAPE IS PART OF WHAT THIS CAMPAIGN IS. A suite run as three
         # processes per scenario and one run whole are different instruments —
         # different handover retention, different horizon — and History lists

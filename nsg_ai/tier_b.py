@@ -593,7 +593,10 @@ def seed_of(params: dict, seed: int | None) -> int:
     if seed is not None:
         return int(seed)
     try:
-        return int(params.get("rng_run") or params.get("random_seed") or 0)
+        value = params.get("rng_run")
+        if value is None:
+            value = params.get("random_seed")
+        return int(value) if value is not None else 0
     except (TypeError, ValueError):
         return 0
 
@@ -1945,6 +1948,7 @@ def stream(params: dict, n: int | None = None,
     when. A handover count is a rate; nothing about a random walk is
     reproducible one for one, in either direction.
     """
+    seed = seed_of(params, seed)
     win = window_s(params)
     ho = ho_policy(params)
     pos = _parse_points(params.get("ue_positions", ""))

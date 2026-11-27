@@ -356,3 +356,13 @@ export async function getEnginePool(): Promise<{
 }> {
   return request('/engine-pool');
 }
+
+// AI service status helper
+export interface AiStatusResponse {
+  configured: boolean;
+  status: "configured" | "unconfigured";
+}
+
+export async function fetchAiStatus(): Promise<AiStatusResponse> {
+  return request<AiStatusResponse>("/ai/status");
+}

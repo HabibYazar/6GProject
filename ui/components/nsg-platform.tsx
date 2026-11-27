@@ -5,6 +5,7 @@ import { HistorySidebar } from "@/components/history-sidebar"
 import { ChatInterface } from "@/components/chat-interface"
 import { ModelPreview } from "@/components/model-preview"
 import { ConfigDiffViewer } from "@/components/ConfigDiffViewer"
+import AiServiceStatus from "@/components/AiServiceStatus"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -22,6 +23,14 @@ export function NsgPlatform() {
       <HistorySidebar onNewScenario={resetSession} />
 
       <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Top bar - app title + AI service status */}
+        <div className="flex items-center justify-between border-b border-border px-4 py-1.5">
+          <span className="text-sm font-semibold text-foreground">
+            NSG AI Platform
+          </span>
+          <AiServiceStatus intervalMs={15000} />
+        </div>
+
         <ResizablePanelGroup direction="horizontal" className="flex-1">
           {isChatOpen && (
             <>
@@ -38,7 +47,7 @@ export function NsgPlatform() {
         </ResizablePanelGroup>
       </div>
 
-      {/* Global diff modal — reads from store directly, zero props */}
+      {/* Global diff modal - reads from store directly, zero props */}
       <ConfigDiffViewer />
       <Toaster />
     </div>

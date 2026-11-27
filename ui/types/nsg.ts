@@ -645,10 +645,11 @@ export interface CampaignRecord {
   created_at: string;
   finished_at: string | null;
   base_seed: number;
-  /** Processes per scenario. 1, or absent on campaigns that predate the field,
-   *  means each scenario ran whole. Part of what the campaign IS: a split suite
-   *  and a whole one are different instruments, and History lists them together. */
-  partition_groups?: number;
+  /** NULL means the setting was not recorded for this historical campaign. */
+  tier?: 'fast' | 'slow' | null;
+  partition_groups?: number | null;
+  /** Slow-tier wall-clock budget. NULL when the historical value is unknown. */
+  wall_cap_s?: number | null;
   thresholds: CampaignThreshold[];
   /** Username of the owner, when the row is not the caller's own. */
   owner?: string | null;
@@ -713,8 +714,8 @@ export interface CampaignDiffItem {
 }
 
 export interface CampaignDiff {
-  baseline: { id: string; name: string; created_at: string; verdict: Verdict | null; base_seed: number };
-  current: { id: string; name: string; created_at: string; verdict: Verdict | null; base_seed: number };
+  baseline: Pick<CampaignRecord, 'id' | 'name' | 'created_at' | 'verdict' | 'base_seed' | 'tier' | 'partition_groups' | 'wall_cap_s'>;
+  current: Pick<CampaignRecord, 'id' | 'name' | 'created_at' | 'verdict' | 'base_seed' | 'tier' | 'partition_groups' | 'wall_cap_s'>;
   overall: 'regressed' | 'fixed' | 'unchanged' | 'changed';
   /** False when the two ran at different base seeds — the diff is noisier. */
   seed_match: boolean;
@@ -858,9 +859,10 @@ export interface CampaignHistoryColumn {
   created_at: string;
   verdict: Verdict | null;
   status: string;
-  /** Processes per scenario. A split column and a whole one are different
-   *  instruments and must not be read as one trend. */
-  partition_groups?: number;
+  /** Execution identity used to prevent mixing incompatible trends. */
+  tier?: 'fast' | 'slow' | null;
+  partition_groups?: number | null;
+  wall_cap_s?: number | null;
   thresholds: CampaignThreshold[];
   items: CampaignHistoryItem[];
 }

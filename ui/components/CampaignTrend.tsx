@@ -17,7 +17,7 @@ import {
 import { CheckCircle2, XCircle, AlertTriangle, ListChecks, RefreshCw, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { campaignHistory } from '@/lib/api';
-import type { CampaignHistory, Verdict } from '@/types/nsg';
+import type { CampaignHistory, CampaignHistoryColumn, Verdict } from '@/types/nsg';
 import { METRIC_GROUPS, metricLabel, metricPreset } from '@/lib/metrics';
 
 const LINE_COLORS = ['#14b8a6', '#f43f5e', '#a78bfa', '#fbbf24', '#38bdf8', '#f97316'];
@@ -47,12 +47,50 @@ function columnLabels(dates: string[]): string[] {
   return dates.map((iso, i) => (seen[days[i]] > 1 ? `${days[i]} ${shortTime(iso)}` : days[i]));
 }
 
+function instrumentKey(c: CampaignHistoryColumn): string {
+  if (!c.tier || c.partition_groups == null ||
+      (c.tier === 'slow' && c.wall_cap_s == null)) {
+    return 'legacy'
+  }
+  return c.tier === 'fast'
+    ? `fast:${c.partition_groups}`
+    : `slow:${c.partition_groups}:${c.wall_cap_s}`
+}
+
+function instrumentLabel(c: CampaignHistoryColumn): string {
+  if (instrumentKey(c) === 'legacy') {
+    return 'Legacy ? unknown execution settings'
+  }
+  if (c.tier === 'fast') return 'Fast tier'
+  return `Slow tier ? ${c.partition_groups} process(es) ? ${c.wall_cap_s}s cap`
+}
+
+function instrumentShortLabel(c: CampaignHistoryColumn): string {
+  if (instrumentKey(c) === 'legacy') return '?'
+  return c.tier === 'fast' ? 'fast' : `ns3?${c.partition_groups}`
+}
+
 export default function CampaignTrend() {
   const [history, setHistory] = useState<CampaignHistory | null>(null);
   const [suite, setSuite] = useState<string | undefined>(undefined);
   const [metric, setMetric] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [cohort, setCohort] = useState('');
+
+  const modes = useMemo(() => {
+    const found = new Map<string, string>();
+    for (const c of history?.campaigns ?? []) {
+      found.set(instrumentKey(c), instrumentLabel(c));
+    }
+    return Array.from(found, ([value, label]) => ({ value, label }));
+  }, [history]);
+
+  useEffect(() => {
+    if (modes.length && !modes.some(m => m.value === cohort)) {
+      setCohort(modes[modes.length - 1].value);
+    }
+  }, [modes, cohort]);
 
   const load = useCallback(async (name?: string) => {
     setLoading(true);
@@ -88,35 +126,28 @@ export default function CampaignTrend() {
     if (metrics.length && !metrics.includes(metric)) setMetric(metrics[0]);
   }, [metrics, metric]);
 
-  const colLabels = useMemo(
-    () => {
-      const base = columnLabels((history?.campaigns ?? []).map(c => c.created_at));
-      // Say which columns were SPLIT. A suite run as three processes and the
-      // same suite run whole sit next to each other here and are scored on the
-      // same axes, but they are not the same measurement: at one window budget
-      // the split run reaches several times more simulated time and serves more
-      // UEs, and it has no interference between groups. Only marked when some
-      // column differs — a chart where every column says the same thing is
-      // noise.
-      const groups = (history?.campaigns ?? []).map(c => c.partition_groups ?? 1);
-      if (new Set(groups).size < 2) return base;
-      return base.map((l, i) => (groups[i] > 1 ? `${l} ÷${groups[i]}` : `${l} whole`));
-    },
-    [history],
-  );
+  const colLabels = useMemo(() => {
+    if (!history) return [] as string[];
+    const base = columnLabels(history.campaigns.map(c => c.created_at));
+    const mixed = new Set(history.campaigns.map(instrumentKey)).size > 1;
+    return base.map((label, i) => mixed
+      ? `${label} ${instrumentShortLabel(history.campaigns[i])}`
+      : label);
+  }, [history]);
 
   /** One row per campaign, one series per scenario — the shape recharts wants. */
   const chartData = useMemo(() => {
-    if (!history || !metric) return [];
-    return history.campaigns.map((c, i) => {
+    if (!history || !metric || !cohort) return [];
+    return history.campaigns.flatMap((c, i) => {
+      if (instrumentKey(c) !== cohort) return [];
       const row: Record<string, string | number> = { when: colLabels[i] };
       for (const it of c.items) {
-        const v = it.metrics[metric];
-        if (typeof v === 'number') row[it.label] = v;
+        const value = it.metrics[metric];
+        if (typeof value === 'number') row[it.label] = value;
       }
-      return row;
+      return [row];
     });
-  }, [history, metric, colLabels]);
+  }, [history, metric, colLabels, cohort]);
 
   const hasData = !!history && history.campaigns.length > 0;
 
@@ -259,13 +290,33 @@ export default function CampaignTrend() {
               {metricLabel(metric)}
               <span className="ml-2 font-mono text-zinc-600">{metric}</span>
             </p>
-            {new Set((history?.campaigns ?? []).map(c => c.partition_groups ?? 1)).size > 1 && (
-              <p className="mb-2 rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[10px] leading-relaxed text-amber-300/80">
-                These columns were not all measured the same way — some ran SPLIT
-                across processes (marked ÷N) and some whole. At one window budget a
-                split run covers several times more simulated time and serves more
-                UEs, and it has no interference between groups. Read them as two
-                experiments, not one trend.
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <label htmlFor="campaign-execution-mode" className="text-[10px] text-zinc-500">
+                Execution mode
+              </label>
+              <select
+                id="campaign-execution-mode"
+                value={cohort}
+                onChange={e => setCohort(e.target.value)}
+                className="rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-300"
+              >
+                {modes.map(m => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+            {modes.length > 1 && (
+              <p className="mb-2 text-[10px] text-amber-300/80">
+                This suite contains different simulation conditions. The chart
+                shows one execution mode at a time; the verdict grid above
+                retains all campaigns.
+              </p>
+            )}
+            {cohort === 'legacy' && (
+              <p className="mb-2 text-[10px] text-amber-300/80">
+                Historical execution settings are unknown. Points are shown
+                without connecting lines because equivalent conditions
+                cannot be established.
               </p>
             )}
             <ResponsiveContainer width="100%" height={260}>
@@ -284,9 +335,9 @@ export default function CampaignTrend() {
                     type="monotone"
                     dataKey={label}
                     stroke={LINE_COLORS[i % LINE_COLORS.length]}
-                    strokeWidth={2}
-                    dot={{ r: 2.5 }}
-                    connectNulls
+                    strokeWidth={cohort === 'legacy' ? 0 : 2}
+                    dot={{ r: 2.5, fill: LINE_COLORS[i % LINE_COLORS.length] }}
+                    connectNulls={false}
                   />
                 ))}
               </LineChart>

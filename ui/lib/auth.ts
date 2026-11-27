@@ -78,7 +78,11 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 export async function fetchAuthState(): Promise<AuthState> {
   const res = await fetch(`${BASE}/auth/me`, { headers: { ...authHeader() } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return (await res.json()) as AuthState;
+  const state = (await res.json()) as AuthState;
+  if (!state.authenticated && getToken()) {
+    clearToken();
+  }
+  return state;
 }
 
 export async function login(username: string, password: string): Promise<AuthState> {
@@ -87,7 +91,16 @@ export async function login(username: string, password: string): Promise<AuthSta
     password,
   });
   setToken(data.access_token);
-  return fetchAuthState();
+  try {
+    const state = await fetchAuthState();
+    if (!state.authenticated) {
+      throw new Error('Session verification failed.');
+    }
+    return state;
+  } catch (error) {
+    clearToken();
+    throw error;
+  }
 }
 
 /** Create the FIRST account. Allowed without credentials only while none exist. */

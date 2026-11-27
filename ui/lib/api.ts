@@ -26,6 +26,16 @@ import { authHeader, clearToken, getToken } from '@/lib/auth';
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
+export class ApiRequestError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ApiRequestError';
+  }
+}
+
 /** Build a ws(s):// URL for a given path, mirroring BASE's http(s) scheme.
  *
  *  The token rides the query string because a browser cannot set headers on a
@@ -48,7 +58,9 @@ export function apiUrl(path: string): string {
 // ── Internal helper ───────────────────────────────────────────────────────────
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
     ...init,
     // Spread init FIRST so an explicit per-call header can still win, but merge
     // rather than replace: the previous version let `init.headers` drop both the
@@ -58,7 +70,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...authHeader(),
       ...(init?.headers as Record<string, string> | undefined),
     },
-  });
+    });
+  } catch {
+    throw new ApiRequestError(0, 'Cannot reach the backend.');
+  }
 
   // An expired or revoked token must not leave the app in a half-logged-in
   // state where every call fails silently. Drop it and send the user to the
@@ -75,10 +90,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // FastAPI returns {"detail": "..."} or {"detail": [{...}]} on errors
     const body = await res.json().catch(() => ({}));
     const message =
-      typeof body.detail === 'string'
-        ? body.detail
-        : JSON.stringify(body.detail ?? `HTTP ${res.status}`);
-    throw new Error(message);
+      res.status === 401
+        ? 'Session expired. Please sign in again.'
+        : res.status === 403
+          ? 'You do not have permission to perform this action.'
+          : typeof body.detail === 'string'
+            ? body.detail
+            : JSON.stringify(body.detail ?? `HTTP ${res.status}`);
+    throw new ApiRequestError(res.status, message);
   }
 
   return res.json() as Promise<T>;

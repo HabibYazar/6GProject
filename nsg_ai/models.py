@@ -128,6 +128,9 @@ class Campaign(Base):
     status: Mapped[str] = mapped_column(String(24), index=True)
     verdict: Mapped[str | None] = mapped_column(String(24))
     base_seed: Mapped[int | None] = mapped_column(Integer)
+    tier: Mapped[str | None] = mapped_column(String(16))
+    partition_groups: Mapped[int | None] = mapped_column(Integer)
+    wall_cap_s: Mapped[float | None] = mapped_column(Float)
     thresholds: Mapped[list | None] = mapped_column(JsonB)
     # The plan the campaign was started with: which scenario at which seed, and
     # how many frames each. Held only in memory until now, so a backend restart

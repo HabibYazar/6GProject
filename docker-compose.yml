@@ -83,7 +83,8 @@ services:
     # copied into the root .env: env_file hands values to the container at run
     # time, so compose itself never has to read the secret to parse this file.
     env_file:
-      - ./nsg_ai/.env
+      - path: ./nsg_ai/.env
+        required: false
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:

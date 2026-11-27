@@ -447,6 +447,21 @@ def partition_groups_of(record: dict) -> int:
     return int(record.get("partition_groups") or 1)
 
 
+def known_partition_groups_of(record: dict) -> int | None:
+    """Return actual/requested shape only when there is supporting evidence.
+
+    NULL on old records is UNKNOWN, not proof that they ran whole.
+    """
+    if record.get("partition_groups") is not None:
+        return partition_groups_of(record)
+    if any(
+        (r.get("summary") or {}).get("partition_shape")
+        for r in record.get("runs") or []
+    ):
+        return partition_groups_of(record)
+    return None
+
+
 def campaign_history(records: list[dict], limit: int = 12) -> dict:
     """Fold a suite's campaigns into a scenario × campaign grid.
 
@@ -500,7 +515,9 @@ def campaign_history(records: list[dict], limit: int = 12) -> dict:
             # times more simulated time, serves more UEs, and loses the
             # interference between groups. Without this the chart draws a trend
             # line through two different experiments.
-            "partition_groups": partition_groups_of(record),
+            "tier": record.get("tier"),
+            "partition_groups": known_partition_groups_of(record),
+            "wall_cap_s": record.get("wall_cap_s"),
             "thresholds": record.get("thresholds") or [],
             "items": items,
         })
@@ -676,7 +693,14 @@ def diff_campaigns(baseline: dict, current: dict) -> dict:
         overall = "changed"
 
     def head(record: dict) -> dict:
-        return {k: record.get(k) for k in ("id", "name", "created_at", "verdict", "base_seed")}
+        return {
+            k: record.get(k)
+            for k in ("id", "name", "created_at", "verdict", "base_seed")
+        } | {
+            "tier": record.get("tier"),
+            "partition_groups": known_partition_groups_of(record),
+            "wall_cap_s": record.get("wall_cap_s"),
+        }
 
     return {
         "baseline": head(baseline),

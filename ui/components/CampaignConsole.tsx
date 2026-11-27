@@ -262,6 +262,17 @@ function humanDuration(seconds: number): string {
   return `${Math.floor(mins / 60)} h ${mins % 60} min`;
 }
 
+function formatCampaignInstrument(
+  c: Pick<CampaignRecord, 'tier' | 'partition_groups' | 'wall_cap_s'>
+): string {
+  if (!c.tier || c.partition_groups == null ||
+      (c.tier === 'slow' && c.wall_cap_s == null)) {
+    return 'Legacy ? execution settings unknown'
+  }
+  if (c.tier === 'fast') return 'Fast tier'
+  return `Slow tier (ns-3) ? ${c.partition_groups} process(es) ? ${c.wall_cap_s}s wall cap`
+}
+
 export default function CampaignConsole() {
   // An admin can look beyond their own work, but only by asking: a list silently
   // full of other people's campaigns is indistinguishable from your own.
@@ -929,6 +940,9 @@ export default function CampaignConsole() {
                     <span className="truncate text-[11px] text-zinc-300">{c.name}</span>
                     <VerdictChip verdict={c.verdict} running={c.status === 'running'} status={c.status} />
                   </div>
+                  <div className="mt-0.5 text-[9px] text-zinc-500">
+                    {formatCampaignInstrument(c)}
+                  </div>
                   <div className="mt-0.5 flex items-center justify-between text-[9px] text-zinc-600">
                     {/* A split campaign and a whole one sit next to each other
                         in this list and score on the same axes. Without this
@@ -993,6 +1007,9 @@ export default function CampaignConsole() {
                       : detail.status === 'stopped'
                         ? 'stopped early — results so far are kept'
                         : detail.status}
+                  </p>
+                  <p className="mt-1 text-[10px] text-zinc-400">
+                    {formatCampaignInstrument(detail)}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -1125,6 +1142,22 @@ const OVERALL_STYLE: Record<string, string> = {
 function DiffPanel({ diff }: { diff: CampaignDiff }) {
   const [showAll, setShowAll] = useState(false)
 
+  const b = diff.baseline
+  const c = diff.current
+
+  const unknownExecution =
+    !b.tier || !c.tier ||
+    b.partition_groups == null || c.partition_groups == null ||
+    (b.tier === 'slow' && b.wall_cap_s == null) ||
+    (c.tier === 'slow' && c.wall_cap_s == null)
+
+  const differentExecution = !unknownExecution && (
+    b.tier !== c.tier ||
+    b.partition_groups !== c.partition_groups ||
+    (b.tier === 'slow' && c.tier === 'slow' &&
+      b.wall_cap_s !== c.wall_cap_s)
+  )
+
   return (
     <div className="border-b border-zinc-800 bg-black/30 px-4 py-3">
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -1144,6 +1177,14 @@ function DiffPanel({ diff }: { diff: CampaignDiff }) {
         <p className="mb-2 rounded border border-amber-500/25 bg-amber-500/5 px-2 py-1.5 text-[10px] leading-relaxed text-amber-300/80">
           {!diff.seed_match && <>Different base seeds ({diff.baseline.base_seed} → {diff.current.base_seed}) — part of every delta is seed noise. </>}
           {!diff.threshold_match && <>Pass criteria changed between the two, so verdict changes may reflect the criteria, not the network.</>}
+        </p>
+      )}
+
+      {(unknownExecution || differentExecution) && (
+        <p className="mb-2 rounded border border-amber-500/25 bg-amber-500/5 px-2 py-1.5 text-[10px] leading-relaxed text-amber-300/80">
+          {unknownExecution
+            ? 'At least one campaign has unknown historical execution settings. KPI differences cannot be assumed to come from equivalent simulation conditions.'
+            : `Execution conditions differ: ${formatCampaignInstrument(b)} vs ${formatCampaignInstrument(c)}. This is not a like-for-like measurement.`}
         </p>
       )}
 

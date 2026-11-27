@@ -66,7 +66,7 @@ from nsoran_live import (run_live_proxy, run_live_traffic,
                          run_batch_simulation, summarise_batch_frames)
 from campaign import (CampaignSpec, campaign_history, campaign_verdict, diff_configs,
                       diff_campaigns, evaluate, expand, horizon_violations,
-                      partition_groups_of)
+                      partition_groups_of, known_partition_groups_of)
 from engine_pool import pool
 import auth as auth_mod
 from auth import (Principal, current_principal, require_user, require_admin,
@@ -2566,7 +2566,7 @@ def _campaign_brief(record: dict) -> dict:
         # From the RESULTS, not the request: the campaigns table has no column
         # for the requested shape, so it came back None after a restart and the
         # History row forgot what it had shown an hour earlier.
-        "partition_groups": partition_groups_of(record),
+        "partition_groups": known_partition_groups_of(record),
     }
 
 

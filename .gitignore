@@ -21,3 +21,4 @@ venv/
 *.sqlite
 *.sqlite3
 *.log
+*.tsbuildinfo

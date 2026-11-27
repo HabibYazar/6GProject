@@ -154,5 +154,21 @@ class CampaignRoutingTests(unittest.IsolatedAsyncioTestCase):
             )
 
 
+    async def test_fast_tier_completion_status(self):
+        from test_sprint2_simulation import sample_frames
+
+        config = example_config(42)
+        params = main.nsoran_params(config)
+
+        with patch(
+            "tier_b.frames",
+            return_value=sample_frames()
+        ):
+            result = await main._run_fast_tier(config, params, 2)
+
+        self.assertEqual(result["status"], "done")
+        self.assertEqual(result["n_frames"], 2)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

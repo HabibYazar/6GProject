@@ -2250,7 +2250,7 @@ async def _run_fast_tier(config: NSGSimulationConfig, params: dict,
                 seen.add(ev)
                 fired.append(f"[NSG-FAULT] {ev} at sim_t={f['sim_t']:g}")
     return {
-        "status": "ok", "error": None, "frames": got, "n_frames": len(got),
+        "status": "done", "error": None, "frames": got, "n_frames": len(got),
         "status_lines": [
             f"fast tier: {len(got)} windows, {span:g} simulated seconds "
             f"in {time.monotonic() - t0:.2f} s wall",

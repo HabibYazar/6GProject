@@ -26,6 +26,16 @@ def example_config(seed=None):
                 }
             }
         }],
+        "ue_groups": [{
+            "id": "ue-sprint2",
+            "name": "Sprint 2 test UEs",
+            "count": 2,
+            "spawn_position": {"x": 150, "y": 100},
+            "mobility": {"pattern": "pedestrian", "speed_mps": 1.0},
+            "services": [
+                {"slice_type": "eMBB", "qos_id": 9}
+            ]
+        }],
         "settings": {
             "random_seed": seed,
             "report_interval_ms": 2000,

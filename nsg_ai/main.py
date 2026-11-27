@@ -594,7 +594,7 @@ def _record_ai_turn(prompt: str, cfg: NSGSimulationConfig,
 
 @app.post("/ai/modify", response_model=NSGSimulationConfig, dependencies=[Depends(require_user)])
 def ai_modify(request: ModifyConfigRequest, response: Response,
-              principal: Principal = Depends(current_principal)) -> NSGSimulationConfig:
+              principal: Principal = Depends(require_user)) -> NSGSimulationConfig:
     """
     Apply a natural-language modification to the current simulation configuration.
 
@@ -2082,7 +2082,7 @@ def _batch_run_poller(run_id: str, config: NSGSimulationConfig, payload: dict,
 @app.post("/ric/validate-nsoran")
 def ric_validate_nsoran(config: NSGSimulationConfig, sim_time: int = 20,
                         partition_groups: int = 1,
-                        principal: Principal = Depends(current_principal)) -> dict:
+                        principal: Principal = Depends(require_user)) -> dict:
     """
     Run the REAL ns-O-RAN engine — FlexRIC (real near-RT RIC) + ns-3.42 mmWave RAN
     over real E2AP/SCTP, running as a container worker — DRIVEN BY THIS SCENARIO,
